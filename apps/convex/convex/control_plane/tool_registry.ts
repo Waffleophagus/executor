@@ -1,12 +1,18 @@
+import { ActionCache } from "@convex-dev/action-cache";
 import { v } from "convex/values";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 
-import { action, internalMutation, internalQuery } from "../_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "../_generated/server";
 
 const defaultSearchLimit = 50;
 const maxSearchLimit = 5_000;
 const writeBatchSize = 500;
 const runtimeInternal = internal as any;
+const listWorkspaceNamespacesActionCache = new ActionCache((components as any).actionCache, {
+  action: runtimeInternal.control_plane.tool_registry.listWorkspaceNamespacesUncached,
+  name: "workspace_namespaces_v1",
+  ttl: 15_000,
+});
 
 const stripConvexSystemFields = (
   value: Record<string, unknown>,
@@ -1252,41 +1258,97 @@ export const listWorkspaceToolsByNormalizedPath = internalQuery({
   },
 });
 
-export const listWorkspaceNamespaces = internalQuery({
+export const listWorkspaceToolIndexPage = internalQuery({
+  args: {
+    workspaceId: v.string(),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const pageSize = Math.max(1, Math.min(500, Math.floor(args.pageSize ?? 200)));
+    const page = await ctx.db
+      .query("workspaceToolIndex")
+      .withIndex("by_workspaceId", (q) => q.eq("workspaceId", args.workspaceId))
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: pageSize,
+      });
+
+    const rows = page.page
+      .filter((row) => row.status === "active")
+      .map((row) => stripConvexSystemFields(row as unknown as Record<string, unknown>));
+
+    return {
+      rows,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const listWorkspaceNamespacesUncached = internalAction({
   args: {
     workspaceId: v.string(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const rows = await buildWorkspaceToolRows(ctx, {
-      workspaceId: args.workspaceId,
-      includeDisabled: false,
-    });
-
     const grouped = new Map<
       string,
       {
         sourceName: string;
         sourceId: string;
         sourceKind: string;
+        toolCount: number;
         paths: Array<string>;
       }
     >();
 
-    for (const row of rows) {
-      const namespace = String(row.namespace);
-      const existing = grouped.get(namespace);
-      if (existing) {
-        existing.paths.push(String(row.path));
-        continue;
+    let cursor: string | null = null;
+    do {
+      const page: {
+        rows: Array<Record<string, unknown>>;
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceToolIndexPage, {
+        workspaceId: args.workspaceId,
+        cursor,
+        pageSize: 250,
+      });
+
+      for (const row of page.rows) {
+        const namespace = String(row.namespace);
+        const path = String(row.path);
+        const existing = grouped.get(namespace);
+        if (existing) {
+          existing.toolCount += 1;
+
+          if (existing.paths.length < 3) {
+            existing.paths.push(path);
+            existing.paths.sort((left, right) => left.localeCompare(right));
+          } else if (path.localeCompare(existing.paths[existing.paths.length - 1] ?? path) < 0) {
+            existing.paths[existing.paths.length - 1] = path;
+            existing.paths.sort((left, right) => left.localeCompare(right));
+          }
+
+          continue;
+        }
+
+        grouped.set(namespace, {
+          sourceName: String(row.sourceName),
+          sourceId: String(row.sourceId),
+          sourceKind: String(row.sourceKind),
+          toolCount: 1,
+          paths: [path],
+        });
       }
 
-      grouped.set(namespace, {
-        sourceName: String(row.sourceName),
-        sourceId: String(row.sourceId),
-        sourceKind: String(row.sourceKind),
-        paths: [String(row.path)],
-      });
+      cursor = page.isDone ? null : (page.continueCursor as string | null);
+    } while (cursor);
+
+    const limit = normalizeLimit(args.limit);
+
+    if (limit <= 0 || grouped.size === 0) {
+      return [];
     }
 
     const namespaces = [...grouped.entries()]
@@ -1295,11 +1357,23 @@ export const listWorkspaceNamespaces = internalQuery({
         source: value.sourceName,
         sourceId: value.sourceId,
         sourceKind: value.sourceKind,
-        toolCount: value.paths.length,
-        samplePaths: value.paths.sort((left, right) => left.localeCompare(right)).slice(0, 3),
+        toolCount: value.toolCount,
+        samplePaths: value.paths,
       }))
       .sort((left, right) => left.namespace.localeCompare(right.namespace));
 
-    return namespaces.slice(0, normalizeLimit(args.limit));
+    return namespaces.slice(0, limit);
   },
+});
+
+export const listWorkspaceNamespaces = internalAction({
+  args: {
+    workspaceId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) =>
+    listWorkspaceNamespacesActionCache.fetch(ctx, {
+      workspaceId: args.workspaceId,
+      limit: args.limit,
+    }),
 });

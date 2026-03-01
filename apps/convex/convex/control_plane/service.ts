@@ -122,7 +122,7 @@ export const makeConvexControlPlaneService = (
     listWorkspaceTools: (workspaceId) =>
       Effect.tryPromise({
         try: () =>
-          ctx.runQuery(api.controlPlane.listWorkspaceTools, {
+          ctx.runAction(api.controlPlane.listWorkspaceTools, {
             workspaceId,
           }),
         catch: (cause) => toSourceStoreError("controlPlane.listWorkspaceTools", cause),
@@ -130,7 +130,7 @@ export const makeConvexControlPlaneService = (
     listSourceTools: (input) =>
       Effect.tryPromise({
         try: () =>
-          ctx.runQuery(api.controlPlane.listSourceTools, {
+          ctx.runAction(api.controlPlane.listSourceTools, {
             workspaceId: input.workspaceId,
             sourceId: input.sourceId,
           }),

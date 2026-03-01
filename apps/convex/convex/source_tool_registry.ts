@@ -1729,7 +1729,7 @@ export const createConvexSourceToolRegistry = (
 
         const rows = yield* Effect.tryPromise({
           try: async () =>
-            (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceNamespaces, {
+            (await ctx.runAction(runtimeInternal.control_plane.tool_registry.listWorkspaceNamespaces, {
               workspaceId,
               limit,
             })) as Array<{

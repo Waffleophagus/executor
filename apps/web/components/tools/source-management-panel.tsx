@@ -85,6 +85,14 @@ const catalogTemplates: ReadonlyArray<CatalogTemplate> = [
     endpoint: "https://mcp.neon.tech/mcp",
   },
   {
+    id: "axiom-mcp",
+    name: "Axiom MCP",
+    summary: "Query, analyze, and monitor your Axiom datasets and logs via MCP.",
+    providerName: "Axiom",
+    type: "mcp",
+    endpoint: "https://mcp.axiom.co/mcp",
+  },
+  {
     id: "neon-openapi",
     name: "Neon API",
     summary: "Manage Neon projects, branches, and organization resources via REST API.",
@@ -169,6 +177,46 @@ const catalogTemplates: ReadonlyArray<CatalogTemplate> = [
     providerName: "Atlassian",
     type: "openapi",
     endpoint: "https://developer.atlassian.com/cloud/jira/platform/swagger-v3.v3.json",
+  },
+  {
+    id: "kubernetes-api",
+    name: "Kubernetes API",
+    summary: "Manage pods, deployments, services, and cluster resources.",
+    providerName: "Kubernetes",
+    type: "openapi",
+    endpoint:
+      "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json",
+    faviconUrl: "https://kubernetes.io",
+  },
+  {
+    id: "square-api",
+    name: "Square API",
+    summary: "Process payments, manage inventory, customers, and merchant operations.",
+    providerName: "Square",
+    type: "openapi",
+    endpoint:
+      "https://raw.githubusercontent.com/square/connect-api-specification/master/api.json",
+    faviconUrl: "https://squareup.com",
+  },
+  {
+    id: "twilio-api",
+    name: "Twilio API",
+    summary: "Send SMS, make calls, and manage communication workflows.",
+    providerName: "Twilio",
+    type: "openapi",
+    endpoint:
+      "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/json/twilio_api_v2010.json",
+    faviconUrl: "https://twilio.com",
+  },
+  {
+    id: "box-api",
+    name: "Box Platform API",
+    summary: "Manage files, folders, collaborations, and enterprise content workflows.",
+    providerName: "Box",
+    type: "openapi",
+    endpoint:
+      "https://raw.githubusercontent.com/box/box-openapi/main/openapi.json",
+    faviconUrl: "https://box.com",
   },
 ];
 

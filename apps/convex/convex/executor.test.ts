@@ -21,6 +21,7 @@ const setup = () =>
     "./control_plane/credentials.ts": () => import("./control_plane/credentials"),
     "./control_plane/sources.ts": () => import("./control_plane/sources"),
     "./control_plane/tool_registry.ts": () => import("./control_plane/tool_registry"),
+    "./control_plane/tools.ts": () => import("./control_plane/tools"),
     "./control_plane/openapi_ingest.ts": () => import("./control_plane/openapi_ingest"),
     "./workflow.ts": () => import("./workflow"),
     "./controlPlane.ts": () => import("./controlPlane"),
@@ -650,7 +651,7 @@ describe("Convex executor and control-plane", () => {
       );
 
       const workspaceTools = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listWorkspaceTools, {
+        t.action(api.controlPlane.listWorkspaceTools, {
           workspaceId: "ws_1",
         }),
       )) as Array<{
@@ -661,7 +662,7 @@ describe("Convex executor and control-plane", () => {
       expect(workspaceTools[0]?.sourceId).toBe("src_1");
 
       const sourceTools = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listSourceTools, {
+        t.action(api.controlPlane.listSourceTools, {
           workspaceId: "ws_1",
           sourceId: "src_1",
         }),
@@ -788,7 +789,7 @@ describe("Convex executor and control-plane", () => {
       );
 
       const graphqlSourceTools = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listSourceTools, {
+        t.action(api.controlPlane.listSourceTools, {
           workspaceId: "ws_1",
           sourceId: "src_graphql_1",
         }),
@@ -803,7 +804,7 @@ describe("Convex executor and control-plane", () => {
       expect(graphqlSourceTools[0]?.method).toBe("post");
 
       const workspaceToolsWithGraphql = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listWorkspaceTools, {
+        t.action(api.controlPlane.listWorkspaceTools, {
           workspaceId: "ws_1",
         }),
       )) as Array<{
@@ -906,7 +907,7 @@ describe("Convex executor and control-plane", () => {
       );
 
       const mcpSourceTools = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listSourceTools, {
+        t.action(api.controlPlane.listSourceTools, {
           workspaceId: "ws_1",
           sourceId: "src_mcp_1",
         }),
@@ -920,7 +921,7 @@ describe("Convex executor and control-plane", () => {
       expect(mcpSourceTools[0]?.path).toContain("deepwiki.mcp.search_docs");
 
       const workspaceToolsWithMcp = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listWorkspaceTools, {
+        t.action(api.controlPlane.listWorkspaceTools, {
           workspaceId: "ws_1",
         }),
       )) as Array<{
@@ -930,7 +931,7 @@ describe("Convex executor and control-plane", () => {
       expect(workspaceToolsWithMcp.some((tool) => tool.sourceId === "src_mcp_1")).toBe(true);
 
       const sourceToolsFromWrongWorkspace = (yield* Effect.tryPromise(() =>
-        t.query(api.controlPlane.listSourceTools, {
+        t.action(api.controlPlane.listSourceTools, {
           workspaceId: "ws_2",
           sourceId: "src_1",
         }),
@@ -1168,7 +1169,7 @@ describe("Convex executor and control-plane", () => {
         expect(sources[0]?.sourceHash).toBeTypeOf("string");
 
         const sourceTools = (yield* Effect.tryPromise(() =>
-          t.query(api.controlPlane.listSourceTools, {
+          t.action(api.controlPlane.listSourceTools, {
             workspaceId: "ws_cred",
             sourceId: "src_graphql_cred_1",
           }),
@@ -1361,7 +1362,7 @@ describe("Convex executor and control-plane", () => {
         expect(sources[0]?.sourceHash).toBeTypeOf("string");
 
         const sourceTools = (yield* Effect.tryPromise(() =>
-          t.query(api.controlPlane.listSourceTools, {
+          t.action(api.controlPlane.listSourceTools, {
             workspaceId: "ws_mcp_ingest",
             sourceId: "src_mcp_ingest_1",
           }),

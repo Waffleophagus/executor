@@ -6,10 +6,12 @@ import {
 } from "@executor-v2/schema";
 import { v } from "convex/values";
 import * as Schema from "effect/Schema";
+import { internal } from "../_generated/api";
 
-import { query } from "../_generated/server";
+import { action, internalQuery, query } from "../_generated/server";
 
 const decodeSource = Schema.decodeUnknownSync(SourceSchema);
+const runtimeInternal = internal as any;
 
 const stripConvexSystemFields = (
   value: Record<string, unknown>,
@@ -163,7 +165,7 @@ const resolveToolRefHintTableJson = async (
 
     const row = await ctx.db
       .query("artifactSchemaRefs")
-      .withIndex("by_artifactId_refKey", (q) =>
+      .withIndex("by_artifactId_refKey", (q: any) =>
         q.eq("artifactId", artifactId).eq("refKey", refKey),
       )
       .unique();
@@ -215,6 +217,28 @@ const toSummary = (
   };
 };
 
+const summaryFromIndexRow = (row: Record<string, unknown>): SourceToolSummary => {
+  const method = asNullableString(row.method)?.toLowerCase() ?? null;
+  const sourceKind = asNullableString(row.sourceKind);
+  const normalizedSourceKind: Source["kind"] =
+    sourceKind === "graphql" || sourceKind === "mcp" || sourceKind === "internal"
+      ? sourceKind
+      : "openapi";
+
+  return {
+    sourceId: (asNullableString(row.sourceId) ?? "") as Source["id"],
+    sourceName: asNullableString(row.sourceName) ?? "",
+    sourceKind: normalizedSourceKind,
+    toolId: asNullableString(row.toolId) ?? "unknown",
+    name: asNullableString(row.name) ?? "Unnamed Tool",
+    description: asNullableString(row.description),
+    method: isMethod(method) ? method : "post",
+    path: asNullableString(row.path) ?? "",
+    operationPath: asNullableString(row.operationPath ?? null),
+    operationHash: asNullableString(row.operationHash) ?? "",
+  };
+};
+
 const sortTools = (tools: ReadonlyArray<SourceToolSummary>): Array<SourceToolSummary> =>
   [...tools].sort((left, right) => {
     const leftSource = left.sourceName.toLowerCase();
@@ -234,91 +258,97 @@ const sortTools = (tools: ReadonlyArray<SourceToolSummary>): Array<SourceToolSum
     return left.toolId.localeCompare(right.toolId);
   });
 
-export const listWorkspaceTools = query({
+const workspaceToolsPageSize = 250;
+
+export const listWorkspaceToolSummaryPage = internalQuery({
+  args: {
+    workspaceId: v.string(),
+    sourceId: v.optional(v.string()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const pageSize = Math.max(1, Math.min(500, Math.floor(args.pageSize ?? workspaceToolsPageSize)));
+    const paginationOptions = {
+      cursor: args.cursor ?? null,
+      numItems: pageSize,
+    };
+
+    const page = args.sourceId
+      ? await ctx.db
+        .query("workspaceToolIndex")
+        .withIndex("by_workspaceId_sourceId", (q: any) =>
+          q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId),
+        )
+        .paginate(paginationOptions)
+      : await ctx.db
+        .query("workspaceToolIndex")
+        .withIndex("by_workspaceId", (q: any) => q.eq("workspaceId", args.workspaceId))
+        .paginate(paginationOptions);
+
+    const summaries = page.page
+      .filter((row) => row.status === "active")
+      .map((row) => summaryFromIndexRow(stripConvexSystemFields(row as unknown as Record<string, unknown>)));
+
+    return {
+      summaries,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const listWorkspaceTools = action({
   args: {
     workspaceId: v.string(),
   },
   handler: async (ctx, args): Promise<Array<SourceToolSummary>> => {
-    const sourceRows = await ctx.db
-      .query("sources")
-      .withIndex("by_workspaceId", (q) => q.eq("workspaceId", args.workspaceId))
-      .collect();
-
-    const sources = sourceRows
-      .map((row) => toSource(row as unknown as Record<string, unknown>))
-      .filter((source) => source.enabled);
-    const bindings = await ctx.db
-      .query("sourceArtifactBindings")
-      .withIndex("by_workspaceId", (q) => q.eq("workspaceId", args.workspaceId))
-      .collect();
-    const bindingBySourceId = new Map<string, string>(
-      bindings.map((row) => [String(row.sourceId), String(row.artifactId)] as const),
-    );
-
     const summaries: Array<SourceToolSummary> = [];
+    let cursor: string | null = null;
 
-    for (const source of sources) {
-      const artifactId = bindingBySourceId.get(source.id);
-      if (!artifactId) {
-        continue;
-      }
+    do {
+      const page: {
+        summaries: Array<SourceToolSummary>;
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(runtimeInternal.control_plane.tools.listWorkspaceToolSummaryPage, {
+        workspaceId: args.workspaceId,
+        cursor,
+        pageSize: workspaceToolsPageSize,
+      });
 
-      const artifactTools = await ctx.db
-        .query("artifactTools")
-        .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
-        .collect();
-
-      for (const artifactTool of artifactTools) {
-        const row = stripConvexSystemFields(artifactTool as unknown as Record<string, unknown>);
-        summaries.push(toSummary(source, row, asNullableString(row.metadataJson)));
-      }
-    }
+      summaries.push(...page.summaries);
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor);
 
     return sortTools(summaries);
   },
 });
 
-export const listSourceTools = query({
+export const listSourceTools = action({
   args: {
     workspaceId: v.string(),
     sourceId: v.string(),
   },
   handler: async (ctx, args): Promise<Array<SourceToolSummary>> => {
-    const sourceRow = await ctx.db
-      .query("sources")
-      .withIndex("by_domainId", (q) => q.eq("id", args.sourceId))
-      .unique();
-
-    if (!sourceRow || sourceRow.workspaceId !== args.workspaceId) {
-      return [];
-    }
-
-    const source = toSource(sourceRow as unknown as Record<string, unknown>);
-    if (!source.enabled) {
-      return [];
-    }
-
-    const binding = await ctx.db
-      .query("sourceArtifactBindings")
-      .withIndex("by_workspaceId_sourceId", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId),
-      )
-      .unique();
-    if (!binding) {
-      return [];
-    }
-
-    const artifactTools = await ctx.db
-      .query("artifactTools")
-      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
-      .collect();
-
     const summaries: Array<SourceToolSummary> = [];
+    let cursor: string | null = null;
 
-    for (const artifactTool of artifactTools) {
-      const row = stripConvexSystemFields(artifactTool as unknown as Record<string, unknown>);
-      summaries.push(toSummary(source, row, asNullableString(row.metadataJson)));
-    }
+    do {
+      const page: {
+        summaries: Array<SourceToolSummary>;
+        continueCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(runtimeInternal.control_plane.tools.listWorkspaceToolSummaryPage, {
+        workspaceId: args.workspaceId,
+        sourceId: args.sourceId,
+        cursor,
+        pageSize: workspaceToolsPageSize,
+      });
+
+      summaries.push(...page.summaries);
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor);
 
     return sortTools(summaries);
   },
@@ -341,44 +371,43 @@ export const getToolDetail = query({
     }
 
     const source = toSource(sourceRow as unknown as Record<string, unknown>);
-    const binding = await ctx.db
-      .query("sourceArtifactBindings")
-      .withIndex("by_workspaceId_sourceId", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId),
+    const indexedRows = await ctx.db
+      .query("workspaceToolIndex")
+      .withIndex("by_workspaceId_operationHash", (q: any) =>
+        q.eq("workspaceId", args.workspaceId).eq("operationHash", args.operationHash),
       )
-      .unique();
-    if (!binding) {
+      .collect();
+    const indexedRow = indexedRows.find((row) => row.sourceId === args.sourceId) ?? null;
+    if (!indexedRow) {
       return null;
     }
 
-    const artifactRows = await ctx.db
+    const artifactTool = await ctx.db
       .query("artifactTools")
-      .withIndex("by_artifactId", (q) => q.eq("artifactId", binding.artifactId))
-      .collect();
-
-    const artifactTool = artifactRows.find((row) => row.operationHash === args.operationHash);
+      .withIndex("by_artifactId_toolId", (q: any) =>
+        q.eq("artifactId", indexedRow.artifactId).eq("toolId", indexedRow.toolId),
+      )
+      .unique();
     if (!artifactTool) {
       return null;
     }
 
     const artifact = await ctx.db
       .query("artifacts")
-      .withIndex("by_domainId", (q) => q.eq("id", binding.artifactId))
+      .withIndex("by_domainId", (q) => q.eq("id", indexedRow.artifactId))
       .unique();
 
     const resolvedRefHintTableJson = source.kind === "openapi"
       ? await resolveToolRefHintTableJson(
         ctx,
-        binding.artifactId,
+        indexedRow.artifactId,
         artifactTool.inputSchemaJson ?? null,
         artifactTool.outputSchemaJson ?? null,
       )
       : null;
 
-    const summary = toSummary(
-      source,
-      stripConvexSystemFields(artifactTool as unknown as Record<string, unknown>),
-      artifactTool.metadataJson ?? null,
+    const summary = summaryFromIndexRow(
+      stripConvexSystemFields(indexedRow as unknown as Record<string, unknown>),
     );
 
     return {
