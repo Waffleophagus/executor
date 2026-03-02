@@ -21,7 +21,7 @@ export type CloudflareWorkerLoaderConfig = {
   runUrl: string;
   authToken: string;
   callbackUrl: string;
-  callbackInternalSecret: string | null;
+  callbackInternalSecret: string;
   requestTimeoutMs: number;
 };
 
@@ -126,10 +126,7 @@ const resolveConfig = (
   );
   const callbackInternalSecret =
     options.callbackInternalSecret ??
-    normalizeString(
-      env.CLOUDFLARE_SANDBOX_CALLBACK_SECRET ??
-        env.EXECUTOR_INTERNAL_TOKEN,
-    ) ??
+    normalizeString(env.CLOUDFLARE_SANDBOX_CALLBACK_SECRET) ??
     null;
 
   const requestTimeoutMs =
@@ -139,7 +136,7 @@ const resolveConfig = (
       defaultRequestTimeoutMs,
     );
 
-  if (!runUrl || !authToken || !callbackUrl) {
+  if (!runUrl || !authToken || !callbackUrl || !callbackInternalSecret) {
     return null;
   }
 
@@ -163,7 +160,7 @@ const makeDispatchRequest = (
     timeoutMs: input.timeoutMs,
     callback: {
       url: config.callbackUrl,
-      internalSecret: config.callbackInternalSecret ?? undefined,
+      internalSecret: config.callbackInternalSecret,
     },
   };
 

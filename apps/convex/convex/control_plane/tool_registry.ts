@@ -423,10 +423,13 @@ export const ingestOpenApiManifest = action({
   },
   handler: async (ctx, args) => {
     const expectedToken =
-      process.env.OPENAPI_INGEST_SERVICE_TOKEN?.trim()
-      || process.env.OPENAPI_PARSE_API_TOKEN?.trim()
-      || "";
-    if (expectedToken.length > 0 && args.token.trim() !== expectedToken) {
+      process.env.OPENAPI_INGEST_SERVICE_TOKEN?.trim() || null;
+
+    if (!expectedToken) {
+      throw new Error("OpenAPI ingest token is not configured");
+    }
+
+    if (args.token.trim() !== expectedToken) {
       throw new Error("Unauthorized OpenAPI ingest request");
     }
 

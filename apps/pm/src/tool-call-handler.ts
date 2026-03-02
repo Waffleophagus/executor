@@ -36,6 +36,47 @@ const RuntimeToolCallRequestSchema = Schema.Struct({
 
 const decodeRuntimeToolCallRequest = Schema.decodeUnknown(RuntimeToolCallRequestSchema);
 
+const trim = (value: string | undefined): string | undefined => {
+  const candidate = value?.trim();
+  return candidate && candidate.length > 0 ? candidate : undefined;
+};
+
+const readHeader = (request: Request, name: string): string | null =>
+  trim(request.headers.get(name) ?? undefined) ?? null;
+
+const readEnv = (name: string): string | undefined => trim(process.env[name]);
+
+const runtimeCallbackSecret = (): string | null =>
+  readEnv("CLOUDFLARE_SANDBOX_CALLBACK_SECRET") ?? null;
+
+const toDeniedResult = (status: number, error: string): Response =>
+  Response.json(
+    {
+      ok: false,
+      kind: "failed",
+      error,
+    } satisfies RuntimeToolCallResult,
+    { status },
+  );
+
+const enforceToolCallSecurity = (request: Request): Response | null => {
+  const expectedSecret = runtimeCallbackSecret();
+  if (!expectedSecret) {
+    return toDeniedResult(503, "Runtime callback secret is not configured");
+  }
+
+  const providedSecret = readHeader(request, "x-internal-secret");
+  if (!providedSecret) {
+    return toDeniedResult(401, "Runtime callback authentication is required");
+  }
+
+  if (providedSecret !== expectedSecret) {
+    return toDeniedResult(403, "Runtime callback authentication failed");
+  }
+
+  return null;
+};
+
 const decodeRequestBodyError = (cause: unknown): PmToolCallHttpRequestError =>
   new PmToolCallHttpRequestError({
     message: "Invalid runtime callback request body",
@@ -79,6 +120,11 @@ export const createPmToolCallHttpHandler = (
 ): ((request: Request) => Promise<Response>) => {
   return async (request: Request) => {
     try {
+      const blocked = enforceToolCallSecurity(request);
+      if (blocked) {
+        return blocked;
+      }
+
       const input = await decodeToolCallRequest(request);
       const result = await handleToolCall(input);
       return Response.json(result, { status: 200 });

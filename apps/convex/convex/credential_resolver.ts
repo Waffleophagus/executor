@@ -18,9 +18,11 @@ import { v } from "convex/values";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { api } from "./_generated/api";
-import { query, type ActionCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { internalQuery, type ActionCtx } from "./_generated/server";
 import { decryptSecretValue } from "./credential_crypto";
+
+const runtimeInternal = internal as any;
 
 const decodeSourceCredentialBinding = Schema.decodeUnknownSync(
   SourceCredentialBindingSchema,
@@ -34,7 +36,7 @@ const stripConvexSystemFields = (
   return rest;
 };
 
-export const listCredentialBindingsForSource = query({
+export const listCredentialBindingsForSource = internalQuery({
   args: {
     workspaceId: v.string(),
     sourceKey: v.string(),
@@ -69,7 +71,7 @@ export const listCredentialBindingsForSource = query({
   },
 });
 
-export const listOAuthTokensForSource = query({
+export const listOAuthTokensForSource = internalQuery({
   args: {
     workspaceId: v.string(),
     sourceId: v.string(),
@@ -140,7 +142,7 @@ export const createConvexResolveToolCredentials = (
       const bindings = yield* runQueryEffect(
         "list_credential_bindings",
         () =>
-          ctx.runQuery(api.credential_resolver.listCredentialBindingsForSource, {
+          ctx.runQuery(runtimeInternal.credential_resolver.listCredentialBindingsForSource, {
             workspaceId: context.workspaceId,
             sourceKey: context.sourceKey,
             organizationId: context.organizationId ?? undefined,
@@ -161,7 +163,7 @@ export const createConvexResolveToolCredentials = (
         binding.provider === "oauth2" && sourceId
           ? yield* runQueryEffect("list_oauth_tokens", () =>
               ctx
-                .runQuery(api.credential_resolver.listOAuthTokensForSource, {
+                .runQuery(runtimeInternal.credential_resolver.listOAuthTokensForSource, {
                   workspaceId: context.workspaceId,
                   sourceId,
                 })

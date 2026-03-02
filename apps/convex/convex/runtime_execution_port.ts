@@ -47,7 +47,7 @@ export const createExecuteRuntimeRunInConvex = (
           operation: "runtime_available",
           message: `Runtime '${convexRuntimeAdapter.kind}' is not configured in this convex process.`,
           details:
-            "Set CLOUDFLARE_SANDBOX_RUN_URL, CLOUDFLARE_SANDBOX_AUTH_TOKEN, and CLOUDFLARE_SANDBOX_CALLBACK_URL.",
+            "Set CLOUDFLARE_SANDBOX_RUN_URL, CLOUDFLARE_SANDBOX_AUTH_TOKEN, CLOUDFLARE_SANDBOX_CALLBACK_URL, and CLOUDFLARE_SANDBOX_CALLBACK_SECRET.",
         });
       }
 

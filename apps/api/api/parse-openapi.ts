@@ -749,15 +749,21 @@ const parseEndpoint = async (request: any, response: any) => {
       || process.env.NEXT_PUBLIC_CONVEX_URL?.trim()
       || "";
     const ingestToken =
-      process.env.OPENAPI_INGEST_SERVICE_TOKEN?.trim()
-      || process.env.OPENAPI_PARSE_API_TOKEN?.trim()
-      || "";
+      process.env.OPENAPI_INGEST_SERVICE_TOKEN?.trim() || "";
 
     const shouldIngest =
       workspaceId.length > 0
       && sourceId.length > 0
       && sourceName.length > 0
       && convexUrl.length > 0;
+
+    if (shouldIngest && ingestToken.length === 0) {
+      json(response, 503, {
+        ok: false,
+        error: "OPENAPI_INGEST_SERVICE_TOKEN is required for ingest mode",
+      });
+      return;
+    }
 
     if (shouldIngest) {
       const ingested = await toIngestPayload(openApiSpec, {

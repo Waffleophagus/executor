@@ -21,26 +21,39 @@ const isTruthyEnvValue = (value: string | undefined): boolean => {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 };
 
-const mcpAuthRequired = (): boolean => {
-  const deploymentMode = (process.env.EXECUTOR_DEPLOYMENT_MODE ?? "").trim().toLowerCase();
-  if (
-    deploymentMode === "cloud"
-    || deploymentMode === "hosted"
-    || deploymentMode === "production"
-    || deploymentMode === "prod"
-  ) {
+const parseOptionalBooleanEnv = (
+  value: string | undefined,
+): boolean | null => {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
     return true;
   }
 
-  if (
-    deploymentMode === "self-hosted"
-    || deploymentMode === "self_hosted"
-    || deploymentMode === "selfhosted"
-  ) {
+  if (["0", "false", "no", "off"].includes(normalized)) {
     return false;
   }
 
-  return isTruthyEnvValue(process.env.EXECUTOR_ENFORCE_MCP_AUTH);
+  return null;
+};
+
+const mcpAuthRequired = (): boolean => {
+  if (isTruthyEnvValue(process.env.EXECUTOR_ALLOW_UNAUTHENTICATED_MCP)) {
+    return false;
+  }
+
+  const explicitEnforcement = parseOptionalBooleanEnv(
+    process.env.EXECUTOR_ENFORCE_MCP_AUTH,
+  );
+
+  if (explicitEnforcement !== null) {
+    return explicitEnforcement;
+  }
+
+  return true;
 };
 
 const getMcpAuthorizationServer = (): string | null =>

@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 
 import { internal } from "./_generated/api";
 import { httpAction, type ActionCtx } from "./_generated/server";
+import { enforceInternalSecret } from "./http_security";
 import { createConvexSourceToolRegistry } from "./source_tool_registry";
 
 class RuntimeToolCallBadRequestError extends Data.TaggedError(
@@ -43,13 +44,6 @@ const RuntimeToolCallRequestSchema = Schema.Struct({
 });
 
 const decodeRuntimeToolCallRequest = Schema.decodeUnknown(RuntimeToolCallRequestSchema);
-
-const readConfiguredWorkspaceId = (value: string | undefined): string => {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : "ws_local";
-};
-
-const fallbackWorkspaceId = readConfiguredWorkspaceId(process.env.CONVEX_WORKSPACE_ID);
 
 const badRequest = (message: string): Response =>
   Response.json(
@@ -91,40 +85,31 @@ const decodeToolCallRequest = (request: Request): Effect.Effect<RuntimeToolCallR
     );
   });
 
-const readWorkspaceIdFromCallbackUrl = (request: Request): string | null => {
-  const value = new URL(request.url).searchParams.get("workspaceId")?.trim();
-  return value && value.length > 0 ? value : null;
-};
-
 const resolveWorkspaceIdForToolCall = (
   ctx: ActionCtx,
-  request: Request,
   input: RuntimeToolCallRequest,
-): Effect.Effect<string, never> =>
+): Effect.Effect<string, RuntimeToolCallBadRequestError> =>
   Effect.gen(function* () {
-    const contextWorkspaceId = input.credentialContext?.workspaceId?.trim();
-    if (contextWorkspaceId) {
-      return contextWorkspaceId;
-    }
-
-    const callbackWorkspaceId = readWorkspaceIdFromCallbackUrl(request);
-    if (callbackWorkspaceId) {
-      return callbackWorkspaceId;
-    }
-
     const runWorkspaceId = yield* Effect.tryPromise({
       try: () =>
         ctx.runQuery(internal.task_runs.getTaskRunWorkspaceId, {
           runId: input.runId,
         }),
-      catch: () => null,
-    }).pipe(Effect.orElseSucceed(() => null));
+      catch: (cause) =>
+        new RuntimeToolCallBadRequestError({
+          message: "Unable to resolve runtime callback workspace",
+          details: formatUnknownDetails(cause),
+        }),
+    });
 
     if (typeof runWorkspaceId === "string" && runWorkspaceId.trim().length > 0) {
       return runWorkspaceId.trim();
     }
 
-    return fallbackWorkspaceId;
+    return yield* new RuntimeToolCallBadRequestError({
+      message: "Runtime callback run is not associated with a workspace",
+      details: `runId=${input.runId}`,
+    });
   });
 
 const handleToolCallHttpEffect = (
@@ -132,8 +117,16 @@ const handleToolCallHttpEffect = (
   request: Request,
 ): Effect.Effect<Response, never> =>
   Effect.gen(function* () {
+    const blockedBySecret = enforceInternalSecret(request, {
+      context: "Runtime callback",
+      envVarNames: ["CLOUDFLARE_SANDBOX_CALLBACK_SECRET"],
+    });
+    if (blockedBySecret) {
+      return blockedBySecret;
+    }
+
     const input = yield* decodeToolCallRequest(request);
-    const workspaceId = yield* resolveWorkspaceIdForToolCall(ctx, request, input);
+    const workspaceId = yield* resolveWorkspaceIdForToolCall(ctx, input);
 
     const toolRegistry = createConvexSourceToolRegistry(ctx, workspaceId);
 
