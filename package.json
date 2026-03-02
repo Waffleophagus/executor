@@ -11,7 +11,6 @@
     "@effect/platform": "^0.93.6",
     "@effect/vitest": "^0.27.0",
     "@types/node": "^20.19.9",
-    "convex": "^1.32.0",
     "effect": "^3.19.8",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
@@ -19,8 +18,9 @@
   "scripts": {
     "prepare": "effect-language-service patch",
     "dev": "turbo run dev --parallel",
-    "typecheck": "tsc --noEmit",
-    "knip": "bunx knip --config knip.json"
+    "typecheck": "turbo run typecheck",
+    "knip": "bunx knip --config knip.json",
+    "db:wipe": "python3 -c \"import zipfile; zipfile.ZipFile('/tmp/_convex_empty.zip','w').close()\" && cd apps/convex && npx convex import --replace-all --yes /tmp/_convex_empty.zip"
   },
   "devDependencies": {
     "@effect/language-service": "^0.76.0",
@@ -30,6 +30,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "convex": "^1.32.0",
     "vercel": "^50.23.2"
   }
 }
