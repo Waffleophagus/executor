@@ -22,7 +22,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 
-const runtimeInternal = internal as any;
+const runtimeInternal = internal;
 
 const decodeSourceCredentialBinding = Schema.decodeUnknownSync(
   SourceCredentialBindingSchema,
@@ -262,7 +262,7 @@ const resolveIngestSelection = async (
         .collect()
         .then((rows) =>
           rows.map((row) => ({
-            binding: toSourceCredentialBinding(row as unknown as Record<string, unknown>),
+            binding: toSourceCredentialBinding(row),
             sourceKey,
           })),
         ),
@@ -302,18 +302,18 @@ const resolveIngestSelection = async (
 
   const oauthTokens = binding.provider === "oauth2"
     ? (await ctx.db
-        .query("oauthTokens")
-        .withIndex("by_sourceId", (q) => q.eq("sourceId", args.sourceId))
-        .collect()).map((row) => toOAuthToken(row as unknown as Record<string, unknown>))
+      .query("oauthTokens")
+      .withIndex("by_sourceId", (q) => q.eq("sourceId", args.sourceId))
+      .collect()).map((row) => toOAuthToken(row))
     : [];
 
   const oauthAccessToken = binding.provider === "oauth2"
     ? selectOAuthAccessToken(oauthTokens, {
-        workspaceId: args.workspaceId,
-        organizationId,
-        accountId: null,
-        sourceKey: binding.sourceKey,
-      }, args.sourceId)
+      workspaceId: args.workspaceId,
+      organizationId,
+      accountId: null,
+      sourceKey: binding.sourceKey,
+    }, args.sourceId)
     : null;
 
   return {
@@ -356,10 +356,7 @@ export const resolveSourceCredentialHeadersForIngest = internalAction({
     const selected = await ctx.runQuery(
       runtimeInternal.control_plane.credentials.resolveSourceCredentialSelectionForIngest,
       args,
-    ) as {
-      binding: SourceCredentialBinding | null;
-      oauthAccessToken: string | null;
-    };
+    )
 
     if (!selected.binding) {
       return {
@@ -396,7 +393,7 @@ export const listCredentialBindings = internalQuery({
 
     const bindings = [...workspaceRows, ...organizationRows]
       .map((row) =>
-        toSourceCredentialBinding(row as unknown as Record<string, unknown>),
+        toSourceCredentialBinding(row),
       )
       .filter((binding) =>
         canAccessSourceCredentialBinding(binding, {
@@ -423,7 +420,7 @@ export const upsertCredentialBindingRecord = internalMutation({
     payload: sourceCredentialBindingPayloadValidator,
   },
   handler: async (ctx, args): Promise<SourceCredentialBinding> => {
-    const payload = args.payload as UpsertCredentialBindingPayload;
+    const payload = args.payload;
 
     if (payload.scopeType === "account" && payload.accountId === null) {
       throw new Error("Account scope credentials require accountId");
@@ -439,7 +436,7 @@ export const upsertCredentialBindingRecord = internalMutation({
       .unique();
 
     const existingBinding = existing
-      ? toSourceCredentialBinding(existing as unknown as Record<string, unknown>)
+      ? toSourceCredentialBinding(existing)
       : null;
 
     if (
@@ -491,7 +488,7 @@ export const upsertCredentialBinding = internalAction({
     payload: sourceCredentialBindingPayloadValidator,
   },
   handler: async (ctx, args): Promise<SourceCredentialBinding> => {
-    const payload = args.payload as UpsertCredentialBindingPayload;
+    const payload = args.payload;
     const requestedSecretRef = payload.secretRef.trim();
     if (requestedSecretRef.length === 0) {
       throw new Error("Credential secret is required");
@@ -509,7 +506,7 @@ export const upsertCredentialBinding = internalAction({
           secretRef: encryptedSecretRef,
         },
       },
-    ) as SourceCredentialBinding;
+    );
 
     return {
       ...written,
@@ -542,7 +539,7 @@ export const removeCredentialBinding = internalMutation({
     }
 
     const existingBinding = toSourceCredentialBinding(
-      existing as unknown as Record<string, unknown>,
+      existing,
     );
 
     if (

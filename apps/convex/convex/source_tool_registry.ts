@@ -886,14 +886,20 @@ const listWorkspaceToolsEffect = (
   },
 ): Effect.Effect<Array<WorkspaceToolIndexRow>, RuntimeAdapterError> =>
   Effect.tryPromise({
-    try: async () =>
-      (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceTools, {
+    try: async () => {
+      await ctx.runAction(runtimeInternal.control_plane.tool_registry.ensureWorkspaceToolIndexCoverage, {
+        workspaceId,
+        ...(options.sourceId ? { sourceId: options.sourceId } : {}),
+      });
+
+      return (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceTools, {
         workspaceId,
         limit: options.limit,
         sourceId: options.sourceId,
         namespace: options.namespace,
         includeDisabled: false,
-      })) as Array<WorkspaceToolIndexRow>,
+      })) as Array<WorkspaceToolIndexRow>;
+    },
     catch: (cause) =>
       toRuntimeAdapterError(
         "list_workspace_tools",
@@ -913,15 +919,21 @@ const searchWorkspaceToolsEffect = (
   },
 ): Effect.Effect<Array<WorkspaceToolIndexRow>, RuntimeAdapterError> =>
   Effect.tryPromise({
-    try: async () =>
-      (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.searchWorkspaceTools, {
+    try: async () => {
+      await ctx.runAction(runtimeInternal.control_plane.tool_registry.ensureWorkspaceToolIndexCoverage, {
+        workspaceId,
+        ...(options.sourceId ? { sourceId: options.sourceId } : {}),
+      });
+
+      return (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.searchWorkspaceTools, {
         workspaceId,
         query: options.query,
         limit: options.limit,
         sourceId: options.sourceId,
         namespace: options.namespace,
         includeDisabled: false,
-      })) as Array<WorkspaceToolIndexRow>,
+      })) as Array<WorkspaceToolIndexRow>;
+    },
     catch: (cause) =>
       toRuntimeAdapterError(
         "search_workspace_tools",
@@ -936,11 +948,16 @@ const getWorkspaceToolByPathEffect = (
   toolPath: string,
 ): Effect.Effect<WorkspaceToolIndexRow | null, RuntimeAdapterError> =>
   Effect.tryPromise({
-    try: async () =>
-      (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.getWorkspaceToolByPath, {
+    try: async () => {
+      await ctx.runAction(runtimeInternal.control_plane.tool_registry.ensureWorkspaceToolIndexCoverage, {
+        workspaceId,
+      });
+
+      return (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.getWorkspaceToolByPath, {
         workspaceId,
         pathLower: toolPath.toLowerCase(),
-      })) as WorkspaceToolIndexRow | null,
+      })) as WorkspaceToolIndexRow | null;
+    },
     catch: (cause) =>
       toRuntimeAdapterError(
         "resolve_tool_path",
@@ -955,12 +972,17 @@ const listWorkspaceToolsByNormalizedPathEffect = (
   normalizedPath: string,
 ): Effect.Effect<Array<WorkspaceToolIndexRow>, RuntimeAdapterError> =>
   Effect.tryPromise({
-    try: async () =>
-      (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceToolsByNormalizedPath, {
+    try: async () => {
+      await ctx.runAction(runtimeInternal.control_plane.tool_registry.ensureWorkspaceToolIndexCoverage, {
+        workspaceId,
+      });
+
+      return (await ctx.runQuery(runtimeInternal.control_plane.tool_registry.listWorkspaceToolsByNormalizedPath, {
         workspaceId,
         normalizedPath,
         limit: 25,
-      })) as Array<WorkspaceToolIndexRow>,
+      })) as Array<WorkspaceToolIndexRow>;
+    },
     catch: (cause) =>
       toRuntimeAdapterError(
         "resolve_tool_path",

@@ -271,121 +271,81 @@ const chunkArray = <A>(values: ReadonlyArray<A>, size: number): Array<Array<A>> 
   return chunks;
 };
 
-const buildWorkspaceToolRows = async (
+const workspaceToolPageSize = 250;
+
+const listWorkspaceToolIndexRows = async (
   ctx: any,
   args: {
     workspaceId: string;
+    limit: number;
     sourceId?: string;
     namespace?: string;
     includeDisabled?: boolean;
   },
 ): Promise<Array<Record<string, unknown>>> => {
-  const sourceRows = await ctx.db
-    .query("sources")
-    .withIndex("by_workspaceId", (q: any) => q.eq("workspaceId", args.workspaceId))
-    .collect();
-
-  const bindingRows = await ctx.db
-    .query("sourceArtifactBindings")
-    .withIndex("by_workspaceId", (q: any) => q.eq("workspaceId", args.workspaceId))
-    .collect();
-
-  const bindingBySourceId = new Map<string, Record<string, unknown>>();
-  for (const row of bindingRows) {
-    bindingBySourceId.set(String(row.sourceId), row as unknown as Record<string, unknown>);
+  const limit = Math.max(0, args.limit);
+  if (limit === 0) {
+    return [];
   }
+
+  const baseQuery: any = (() => {
+    if (args.sourceId) {
+      return ctx.db
+        .query("workspaceToolIndex")
+        .withIndex("by_workspaceId_sourceId", (q: any) =>
+          q.eq("workspaceId", args.workspaceId).eq("sourceId", args.sourceId),
+        );
+    }
+
+    if (args.namespace) {
+      return ctx.db
+        .query("workspaceToolIndex")
+        .withIndex("by_workspaceId_namespace", (q: any) =>
+          q.eq("workspaceId", args.workspaceId).eq("namespace", args.namespace),
+        );
+    }
+
+    return ctx.db
+      .query("workspaceToolIndex")
+      .withIndex("by_workspaceId", (q: any) => q.eq("workspaceId", args.workspaceId));
+  })();
 
   const rows: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
 
-  for (const sourceRow of sourceRows) {
-    const source = sourceRow as unknown as Record<string, unknown>;
-    const sourceId = String(source.id ?? "");
-    const sourceName = String(source.name ?? "");
-    const sourceKind = String(source.kind ?? "");
-    const sourceEnabled = source.enabled === true;
+  do {
+    const page: {
+      page: Array<Record<string, unknown>>;
+      continueCursor: string | null;
+      isDone: boolean;
+    } = await baseQuery.paginate({
+      cursor,
+      numItems: Math.min(workspaceToolPageSize, Math.max(1, limit - rows.length)),
+    });
 
-    if (args.sourceId && sourceId !== args.sourceId) {
-      continue;
+    for (const row of page.page) {
+      if (args.includeDisabled !== true && row.status !== "active") {
+        continue;
+      }
+      if (args.sourceId && row.sourceId !== args.sourceId) {
+        continue;
+      }
+      if (args.namespace && row.namespace !== args.namespace) {
+        continue;
+      }
+
+      rows.push(stripConvexSystemFields(row as unknown as Record<string, unknown>));
+      if (rows.length >= limit) {
+        break;
+      }
     }
 
-    const status = sourceEnabled ? "active" : "disabled";
-    if (args.includeDisabled !== true && status !== "active") {
-      continue;
+    if (rows.length >= limit || page.isDone) {
+      break;
     }
 
-    const binding = bindingBySourceId.get(sourceId);
-    if (!binding) {
-      continue;
-    }
-
-    const artifactId = String(binding.artifactId ?? "");
-    if (artifactId.length === 0) {
-      continue;
-    }
-
-    const namespace = sourceNamespace({ id: sourceId, name: sourceName });
-    if (args.namespace && namespace !== args.namespace) {
-      continue;
-    }
-
-    const artifactTools = await ctx.db
-      .query("artifactTools")
-      .withIndex("by_artifactId", (q: any) => q.eq("artifactId", artifactId))
-      .collect();
-
-    for (const artifactToolRow of artifactTools) {
-      const artifactTool = artifactToolRow as unknown as Record<string, unknown>;
-      const toolId = String(artifactTool.toolId ?? "");
-      const protocol = String(artifactTool.protocol ?? "openapi");
-      const canonicalPath =
-        typeof artifactTool.canonicalPath === "string" && artifactTool.canonicalPath.trim().length > 0
-          ? artifactTool.canonicalPath.trim()
-          : null;
-      const method = toWorkspaceToolMethod(
-        protocol,
-        typeof artifactTool.metadataJson === "string" ? artifactTool.metadataJson : null,
-        canonicalPath,
-      );
-      const path = `${namespace}.${toolId}`;
-      const description = typeof artifactTool.description === "string" ? artifactTool.description : null;
-      const name = String(artifactTool.name ?? toolId);
-
-      rows.push({
-        id: `wti_${args.workspaceId}_${sourceId}_${toolId}`,
-        workspaceId: args.workspaceId,
-        sourceId,
-        sourceName,
-        sourceKind,
-        artifactId,
-        toolId,
-        protocol,
-        method,
-        namespace,
-        path,
-        pathLower: path.toLowerCase(),
-        normalizedPath: normalizePathForLookup(path),
-        operationPath: canonicalPath,
-        name,
-        description,
-        searchText: normalizedSearchText(
-          sourceName,
-          String(source.endpoint ?? ""),
-          namespace,
-          toolId,
-          name,
-          description,
-          ...metadataSearchTerms(
-            typeof artifactTool.metadataJson === "string" ? artifactTool.metadataJson : null,
-          ),
-        ),
-        operationHash: String(artifactTool.operationHash ?? ""),
-        approvalMode: "auto",
-        status,
-        refHintTableJson: null,
-        updatedAt: Number(binding.updatedAt ?? Date.now()),
-      });
-    }
-  }
+    cursor = page.continueCursor;
+  } while (cursor !== null);
 
   rows.sort((left, right) => String(left.path).localeCompare(String(right.path)));
   return rows;
@@ -1425,21 +1385,34 @@ export const searchWorkspaceTools = internalQuery({
       return [];
     }
 
-    const rows = await buildWorkspaceToolRows(ctx, {
-      workspaceId: args.workspaceId,
-      sourceId: args.sourceId,
-      namespace: args.namespace,
-      includeDisabled: args.includeDisabled,
-    });
+    const searchQuery: any = ctx.db
+      .query("workspaceToolIndex")
+      .withSearchIndex("search_text", (q: any) => {
+        let scoped = q.search("searchText", trimmedQuery).eq("workspaceId", args.workspaceId);
+        if (args.sourceId) {
+          scoped = scoped.eq("sourceId", args.sourceId);
+        }
+        if (args.namespace) {
+          scoped = scoped.eq("namespace", args.namespace);
+        }
+        if (args.includeDisabled !== true) {
+          scoped = scoped.eq("status", "active");
+        }
+        return scoped;
+      });
+    const searchFetchLimit = Math.max(limit, Math.min(maxSearchLimit, Math.max(limit * 4, 200)));
+    const rows = (await searchQuery.take(searchFetchLimit)).map((row: Record<string, unknown>) =>
+      stripConvexSystemFields(row),
+    );
 
     const queryLower = trimmedQuery.toLowerCase();
     const ranked = rows
-      .map((row) => ({
+      .map((row: Record<string, unknown>) => ({
         row,
         score: scoreSearchRow(row, queryLower),
       }))
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => {
+      .filter((entry: { row: Record<string, unknown>; score: number }) => entry.score > 0)
+      .sort((left: { row: Record<string, unknown>; score: number }, right: { row: Record<string, unknown>; score: number }) => {
         if (left.score !== right.score) {
           return right.score - left.score;
         }
@@ -1447,7 +1420,7 @@ export const searchWorkspaceTools = internalQuery({
         return String(left.row.path).localeCompare(String(right.row.path));
       });
 
-    return ranked.slice(0, limit).map((entry) => entry.row);
+    return ranked.slice(0, limit).map((entry: { row: Record<string, unknown> }) => entry.row);
   },
 });
 
@@ -1460,14 +1433,15 @@ export const listWorkspaceTools = internalQuery({
     includeDisabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const rows = await buildWorkspaceToolRows(ctx, {
+    const rows = await listWorkspaceToolIndexRows(ctx, {
       workspaceId: args.workspaceId,
+      limit: normalizeLimit(args.limit),
       sourceId: args.sourceId,
       namespace: args.namespace,
       includeDisabled: args.includeDisabled,
     });
 
-    return rows.slice(0, normalizeLimit(args.limit));
+    return rows;
   },
 });
 
@@ -1477,12 +1451,14 @@ export const getWorkspaceToolByPath = internalQuery({
     pathLower: v.string(),
   },
   handler: async (ctx, args) => {
-    const rows = await buildWorkspaceToolRows(ctx, {
-      workspaceId: args.workspaceId,
-      includeDisabled: true,
-    });
+    const row = await ctx.db
+      .query("workspaceToolIndex")
+      .withIndex("by_workspaceId_pathLower", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("pathLower", args.pathLower),
+      )
+      .first();
 
-    return rows.find((row) => String(row.pathLower) === args.pathLower) ?? null;
+    return row ? stripConvexSystemFields(row as unknown as Record<string, unknown>) : null;
   },
 });
 
@@ -1493,14 +1469,20 @@ export const listWorkspaceToolsByNormalizedPath = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const rows = await buildWorkspaceToolRows(ctx, {
-      workspaceId: args.workspaceId,
-      includeDisabled: false,
-    });
+    const limit = normalizeLimit(args.limit);
+    const page = await ctx.db
+      .query("workspaceToolIndex")
+      .withIndex("by_workspaceId_normalizedPath", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("normalizedPath", args.normalizedPath),
+      )
+      .paginate({
+        cursor: null,
+        numItems: limit,
+      });
 
-    return rows
-      .filter((row) => String(row.normalizedPath) === args.normalizedPath)
-      .slice(0, normalizeLimit(args.limit));
+    return page.page
+      .filter((row) => row.status === "active")
+      .map((row) => stripConvexSystemFields(row as unknown as Record<string, unknown>));
   },
 });
 
