@@ -140,6 +140,22 @@ const resolveControlPlaneDataDir = (): string =>
 const resolveStateRootDir = (): string =>
   trim(process.env.CONTROL_PLANE_STATE_ROOT_DIR) ?? defaultControlPlaneStateRootDir;
 
+const formatCause = (cause: unknown): string => {
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+
+  if (typeof cause === "string") {
+    return cause;
+  }
+
+  try {
+    return JSON.stringify(cause);
+  } catch {
+    return String(cause);
+  }
+};
+
 const ensurePrincipalProvisioned = (
   persistence: SqlControlPlanePersistence,
   principal: ControlPlanePrincipal,
@@ -236,6 +252,20 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
   const sourceManager = makeSourceManagerService(toolArtifactStore);
   const baseSourcesService = makeControlPlaneSourcesService(sourceCatalog);
 
+  const persistSourceErrorState = (source: Parameters<typeof sourceStore.upsert>[0], message: string) => {
+    const failedSource = {
+      ...source,
+      status: "error" as const,
+      lastError: message,
+      updatedAt: Date.now(),
+    };
+
+    return sourceStore.upsert(failedSource).pipe(
+      Effect.as(failedSource),
+      Effect.catchAll(() => Effect.succeed(failedSource)),
+    );
+  };
+
   const sourcesService = {
     ...baseSourcesService,
     upsertSource: (input: Parameters<typeof baseSourcesService.upsertSource>[0]) =>
@@ -252,17 +282,49 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
         }).pipe(Effect.either);
 
         if (openApiSpecResult._tag === "Left") {
-          return source;
+          const details = formatCause(openApiSpecResult.left);
+          const message = `Failed fetching OpenAPI document: ${details}`;
+          console.error("[control-plane] openapi fetch failed", {
+            sourceId: source.id,
+            workspaceId: source.workspaceId,
+            endpoint: source.endpoint,
+            details,
+          });
+
+          return yield* persistSourceErrorState(source, message);
         }
 
-        yield* sourceManager
+        const refreshedResult = yield* sourceManager
           .refreshOpenApiArtifact({
             source,
             openApiSpec: openApiSpecResult.right,
           })
-          .pipe(Effect.ignore);
+          .pipe(Effect.either);
 
-        return source;
+        if (refreshedResult._tag === "Left") {
+          const details = formatCause(refreshedResult.left);
+          const message = `Failed extracting OpenAPI tools: ${details}`;
+          console.error("[control-plane] openapi extraction failed", {
+            sourceId: source.id,
+            workspaceId: source.workspaceId,
+            endpoint: source.endpoint,
+            details,
+          });
+
+          return yield* persistSourceErrorState(source, message);
+        }
+
+        const refreshedSource = {
+          ...source,
+          status: "connected" as const,
+          sourceHash: refreshedResult.right.manifest.sourceHash,
+          lastError: null,
+          updatedAt: Date.now(),
+        };
+
+        yield* sourceStore.upsert(refreshedSource).pipe(Effect.ignore);
+
+        return refreshedSource;
       }),
   };
 
