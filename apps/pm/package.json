@@ -17,6 +17,7 @@
     "@executor-v2/mcp-gateway": "workspace:*",
     "@executor-v2/persistence-ports": "workspace:*",
     "@executor-v2/persistence-sql": "workspace:*",
+    "@executor-v2/schema": "workspace:*",
     "@executor-v2/runtime-cloudflare-worker-loader": "workspace:*",
     "@executor-v2/runtime-deno-subprocess": "workspace:*",
     "@executor-v2/runtime-local-inproc": "workspace:*",
