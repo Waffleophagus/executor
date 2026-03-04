@@ -1,0 +1,59 @@
+<div class="relative isolate overflow-hidden rounded-2xl border border-white/[0.12] bg-surface-elevated">
+  <div class="pointer-events-none absolute inset-0">
+    <div class="absolute -top-24 -left-20 h-72 w-72 rounded-full bg-accent/20 blur-3xl"></div>
+    <div class="absolute -bottom-32 right-0 h-80 w-80 rounded-full bg-white/[0.06] blur-3xl"></div>
+    <div class="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:22px_22px] opacity-[0.08]"></div>
+  </div>
+
+  <div class="relative p-6 sm:p-8 lg:p-10">
+    <p class="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-accent/90 mb-3">
+      For API Providers
+    </p>
+
+    <h2 class="font-serif text-[clamp(1.8rem,4vw,3rem)] leading-[1.08] mb-4 max-w-4xl">
+      If your MCP auth works, your API can be one-command installable too.
+    </h2>
+
+    <p class="text-white/70 max-w-3xl text-[0.98rem] sm:text-base leading-relaxed">
+      The same OAuth posture you are building for MCP clients can make your core API agent-ready in Executor. Give users a single <code>sources add</code> flow instead of another vendor-specific CLI.
+    </p>
+
+    <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <article class="rounded-xl border border-white/[0.1] bg-black/30 backdrop-blur-sm">
+        <header class="px-5 py-4 border-b border-white/[0.08]">
+          <h3 class="font-serif text-xl">Publish this once</h3>
+        </header>
+        <ul class="px-5 py-5 space-y-2.5 text-sm text-white/70 leading-relaxed list-disc pl-5">
+          <li>OAuth metadata endpoint (OIDC or OAuth auth-server metadata)</li>
+          <li>PKCE-ready authorize and token endpoints</li>
+          <li>DCR (RFC 7591) for local, per-install client registration</li>
+          <li>Loopback redirect support for CLI-based auth handoff</li>
+          <li>Well-scoped permissions that map cleanly to API capabilities</li>
+        </ul>
+      </article>
+
+      <article class="rounded-xl border border-white/[0.1] bg-black/30 backdrop-blur-sm">
+        <header class="px-5 py-4 border-b border-white/[0.08]">
+          <h3 class="font-serif text-xl">Get this immediately</h3>
+        </header>
+        <ul class="px-5 py-5 space-y-2.5 text-sm text-white/70 leading-relaxed list-disc pl-5">
+          <li>Users connect in minutes without app-registration docs</li>
+          <li>Agents call typed tools generated from your OpenAPI definition</li>
+          <li>Executor handles token refresh, workspace binding, and policy gates</li>
+          <li>No parallel "AI-only" CLI maintenance burden on your team</li>
+          <li>Your API becomes interoperable across MCP-capable clients</li>
+        </ul>
+      </article>
+    </div>
+
+    <div class="mt-8 rounded-xl border border-accent/40 bg-black/35 px-5 py-4">
+      <p class="font-mono text-[0.72rem] text-white/70 mb-2 uppercase tracking-[0.18em]">
+        Ideal provider onboarding
+      </p>
+      <pre class="!m-0 !p-0 !bg-transparent !border-0 overflow-x-auto"><code class="font-mono text-[0.8rem] sm:text-[0.9rem] leading-7 text-white/80">executor sources add --kind openapi --url https://api.yourcompany.com/openapi.json</code></pre>
+      <p class="mt-3 text-sm text-white/65">
+        Approve once in browser. Source connects. Agent starts calling your API through governed tool execution.
+      </p>
+    </div>
+  </div>
+</div>

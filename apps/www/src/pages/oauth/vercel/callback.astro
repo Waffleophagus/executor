@@ -1,0 +1,35 @@
+---
+const script = `
+(() => {
+  const query = new URLSearchParams(window.location.search)
+  const message = {
+    type: "executor:vercel-oauth-callback",
+    code: query.get("code") ?? undefined,
+    state: query.get("state") ?? undefined,
+    error: query.get("error") ?? undefined,
+    error_description: query.get("error_description") ?? undefined,
+  }
+
+  if (window.opener) {
+    window.opener.postMessage(message, "*")
+  }
+
+  setTimeout(() => {
+    window.close()
+  }, 50)
+})()
+`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Executor OAuth Callback</title>
+  </head>
+  <body style="background:#0a0a0a;color:#e5e5e5;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+    <p style="opacity:0.75;letter-spacing:0.02em;">Completing OAuth flow...</p>
+    <script is:inline set:html={script}></script>
+  </body>
+</html>

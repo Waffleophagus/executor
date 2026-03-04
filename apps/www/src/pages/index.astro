@@ -7,6 +7,8 @@ import { SystemPrompt } from "../components/SystemPrompt";
 import { ExampleQueries } from "../components/ExampleQueries";
 import { ApprovalFlow } from "../components/ApprovalFlow";
 import { UsageCards } from "../components/UsageCards";
+import ProviderReadySection from "../components/ProviderReadySection.astro";
+import { LiveDcrDemo } from "../components/LiveDcrDemo";
 ---
 
 <Base title="Executor — Tool calling that actually works" description="Give AI agents safe, governed access to any API. Sandboxed TypeScript execution with policy-based approval flows.">
@@ -102,6 +104,17 @@ import { UsageCards } from "../components/UsageCards";
 
       <div class="my-8">
         <UsageCards />
+      </div>
+    </Section>
+
+    <!-- ======================================================
+         PROVIDER SECTION
+         ====================================================== -->
+    <Section class="bg-[#080808]">
+      <ProviderReadySection />
+
+      <div class="mt-10">
+        <LiveDcrDemo client:only="react" />
       </div>
     </Section>
 
