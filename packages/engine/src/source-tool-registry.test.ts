@@ -230,6 +230,7 @@ describe("source tool registry", () => {
 
       expect(discovered.bestPath).not.toBeNull();
       expect(discovered.results.length).toBeGreaterThan(0);
+      expect(discovered.bestPath).toContain("source.src_github.");
       expect(discovered.perQuery).toHaveLength(1);
       expect(discovered.perQuery[0]?.text).toBe("repo");
       expect(discovered.perQuery[0]?.bestPath).toBe(discovered.bestPath);

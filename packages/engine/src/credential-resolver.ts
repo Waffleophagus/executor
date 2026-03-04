@@ -41,17 +41,6 @@ const decodeCredentialContext = Schema.decodeUnknownEither(
   RuntimeToolCallCredentialContextSchema,
 );
 
-const AdditionalHeadersFromJsonSchema = Schema.parseJson(
-  Schema.Record({
-    key: Schema.String,
-    value: Schema.String,
-  }),
-);
-
-const decodeAdditionalHeadersFromJson = Schema.decodeUnknownEither(
-  AdditionalHeadersFromJsonSchema,
-);
-
 export const sourceIdFromSourceKey = (sourceKey: string): string | null => {
   if (!sourceKey.startsWith("source:")) {
     return null;
@@ -140,21 +129,6 @@ export const selectCredentialBinding = (
   return ranked[0]?.binding ?? null;
 };
 
-const parseAdditionalHeaders = (
-  additionalHeadersJson: string | null,
-): Record<string, string> => {
-  if (!additionalHeadersJson) {
-    return {};
-  }
-
-  const decoded = decodeAdditionalHeadersFromJson(additionalHeadersJson);
-  if (Either.isLeft(decoded)) {
-    return {};
-  }
-
-  return decoded.right;
-};
-
 type OAuthAccessTokenRecord = {
   workspaceId: string;
   organizationId: string | null;
@@ -229,41 +203,6 @@ export const selectOAuthAccessToken = (
     });
 
   return ranked[0]?.token.accessTokenRef ?? null;
-};
-
-export const buildCredentialHeaders = (
-  binding: SourceCredentialBinding,
-  options: {
-    oauthAccessToken: string | null;
-  },
-): Record<string, string> => {
-  const headers: Record<string, string> = {};
-
-  if (binding.provider === "api_key") {
-    if (binding.secretRef.trim().length > 0) {
-      headers["x-api-key"] = binding.secretRef;
-    }
-  }
-
-  if (binding.provider === "bearer") {
-    if (binding.secretRef.trim().length > 0) {
-      headers.Authorization = `Bearer ${binding.secretRef}`;
-    }
-  }
-
-  if (binding.provider === "oauth2") {
-    const oauthToken = options.oauthAccessToken ?? binding.secretRef;
-    if (oauthToken.trim().length > 0) {
-      headers.Authorization = `Bearer ${oauthToken}`;
-    }
-  }
-
-  const additionalHeaders = parseAdditionalHeaders(binding.additionalHeadersJson);
-
-  return {
-    ...headers,
-    ...additionalHeaders,
-  };
 };
 
 export const makeCredentialResolver = (

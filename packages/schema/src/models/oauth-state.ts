@@ -6,9 +6,10 @@ import { AuthConnectionIdSchema, OAuthStateIdSchema } from "../ids";
 export const OAuthStateSchema = Schema.Struct({
   id: OAuthStateIdSchema,
   connectionId: AuthConnectionIdSchema,
-  accessTokenCiphertext: Schema.String,
-  refreshTokenCiphertext: Schema.NullOr(Schema.String),
-  keyVersion: Schema.String,
+  backend: Schema.String,
+  accessTokenHandle: Schema.String,
+  refreshTokenHandle: Schema.NullOr(Schema.String),
+  clientSecretHandle: Schema.NullOr(Schema.String),
   expiresAt: Schema.NullOr(TimestampMsSchema),
   scope: Schema.NullOr(Schema.String),
   tokenType: Schema.NullOr(Schema.String),

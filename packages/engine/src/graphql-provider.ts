@@ -160,6 +160,7 @@ export const makeGraphqlToolProvider = (): ToolProvider => ({
         "content-type": "application/json",
         ...collectSourceHeaders(config),
         ...readStringRecord(args.headers),
+        ...(input.credentialHeaders ?? {}),
       });
 
       const response = yield* Effect.tryPromise({

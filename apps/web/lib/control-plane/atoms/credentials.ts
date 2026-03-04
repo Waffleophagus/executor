@@ -59,7 +59,7 @@ export const toCredentialBindingUpsertPayload = (input: {
   scopeType: CredentialScopeType;
   sourceKey: string;
   provider: CredentialProvider;
-  secretRef: string;
+  secret: string;
   accountId?: SourceCredentialBinding["accountId"];
   additionalHeadersJson?: SourceCredentialBinding["additionalHeadersJson"];
   boundAuthFingerprint?: SourceCredentialBinding["boundAuthFingerprint"];
@@ -79,7 +79,7 @@ export const toCredentialBindingUpsertPayload = (input: {
   scopeType: input.scopeType,
   sourceKey: input.sourceKey,
   provider: input.provider,
-  secretRef: input.secretRef,
+  secret: input.secret,
   ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
   ...(input.additionalHeadersJson !== undefined
     ? { additionalHeadersJson: input.additionalHeadersJson }

@@ -22,6 +22,7 @@ export type InvokeToolInput = {
   source: Source | null;
   tool: CanonicalToolDescriptor;
   args: unknown;
+  credentialHeaders?: Readonly<Record<string, string>>;
 };
 
 export type InvokeToolResult = ToolInvokeResult;

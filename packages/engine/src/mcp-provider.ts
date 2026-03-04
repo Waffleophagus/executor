@@ -225,6 +225,7 @@ const withMcpConnection = <A>(
   source: Source,
   connector: McpConnector,
   operation: string,
+  credentialHeaders: Readonly<Record<string, string>>,
   run: (connection: McpConnection) => Effect.Effect<A, ToolProviderError>,
 ): Effect.Effect<A, ToolProviderError> =>
   Effect.scoped(
@@ -247,7 +248,10 @@ const withMcpConnection = <A>(
               endpoint,
               transport: readMcpTransportFromConfig(config),
               queryParams: readQueryParamsFromConfig(config),
-              headers: collectSourceHeaders(config),
+              headers: {
+                ...collectSourceHeaders(config),
+                ...credentialHeaders,
+              },
             }),
           catch: (cause) =>
             toMcpProviderError(
@@ -284,6 +288,7 @@ export const makeMcpToolProvider = (
         source,
         connector,
         "discover.connect",
+        {},
         (connection) =>
           Effect.gen(function* () {
             const listed = yield* Effect.tryPromise({
@@ -356,6 +361,7 @@ export const makeMcpToolProvider = (
           input.source,
           connector,
           "invoke.connect",
+          input.credentialHeaders ?? {},
           (connection) =>
             Effect.gen(function* () {
               const result = yield* Effect.tryPromise({

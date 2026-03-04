@@ -45,7 +45,7 @@ export {
   type ToolRegistryToolSummary,
 } from "./tool-registry";
 
-export { createSourceToolRegistry } from "./source-tool-registry";
+export { createSourceToolRegistry, sourceIdFromToolPath } from "./source-tool-registry";
 
 export {
   buildExecuteToolDescription,
@@ -102,7 +102,6 @@ export {
 } from "./run-execution-service";
 
 export {
-  buildCredentialHeaders,
   CredentialResolverError,
   extractCredentialResolutionContext,
   makeCredentialResolver,

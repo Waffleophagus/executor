@@ -183,19 +183,27 @@ const toolProviderRegistryErrorToRuntimeAdapterError = (
 ): RuntimeAdapterError =>
   toRuntimeAdapterError(operation, cause.message, null);
 
-const normalizeNamespacePart = (value: string): string => {
+const normalizeSourceIdPart = (value: string): string => {
   const normalized = value
     .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
-  return normalized.length > 0 ? normalized : "source";
+  return normalized.length > 0 ? normalized : "unknown";
+};
+
+export const sourceIdFromToolPath = (toolPath: string): string | null => {
+  const match = /^source\.([A-Za-z0-9_-]+)\./i.exec(toolPath.trim());
+  if (!match) {
+    return null;
+  }
+
+  const sourceId = match[1]?.trim();
+  return sourceId && sourceId.length > 0 ? sourceId : null;
 };
 
 const sourceNamespace = (source: Source): string => {
-  const sourceIdSuffix = source.id.slice(-6).toLowerCase();
-  return `${normalizeNamespacePart(source.name)}_${sourceIdSuffix}`;
+  return `source.${normalizeSourceIdPart(source.id)}`;
 };
 
 const sourceToolPath = (
@@ -1028,6 +1036,7 @@ export const createSourceToolRegistry = (
           source: entry.source,
           tool: entry.descriptor,
           args: approvalRequest.input ?? {},
+          credentialHeaders: input.credentialHeaders,
         })
         .pipe(
           Effect.mapError((cause) =>

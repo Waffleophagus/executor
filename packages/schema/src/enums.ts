@@ -14,9 +14,6 @@ export const CredentialProviderSchema = Schema.Literal(
   "basic",
   "custom",
 );
-export const CredentialSecretProviderSchema = Schema.Literal(
-  "local",
-);
 export const CredentialScopeTypeSchema = Schema.Literal(
   "workspace",
   "organization",
@@ -91,7 +88,6 @@ export type ApprovalStatus = typeof ApprovalStatusSchema.Type;
 export type TaskRunStatus = typeof TaskRunStatusSchema.Type;
 export type CredentialMode = typeof CredentialModeSchema.Type;
 export type CredentialProvider = typeof CredentialProviderSchema.Type;
-export type CredentialSecretProvider = typeof CredentialSecretProviderSchema.Type;
 export type CredentialScopeType = typeof CredentialScopeTypeSchema.Type;
 export type AuthConnectionStrategy = typeof AuthConnectionStrategySchema.Type;
 export type AuthConnectionStatus = typeof AuthConnectionStatusSchema.Type;

@@ -47,23 +47,10 @@ const providerFromStrategy = (
   return "custom";
 };
 
-const maskedSecretRef = (connection: AuthConnection): string => {
-  if (connection.strategy === "oauth2") {
-    if (connection.status === "reauth_required") {
-      return "oauth2://reauth_required";
-    }
-
-    if (connection.status === "active") {
-      return "oauth2://connected";
-    }
-  }
-
-  return "********";
-};
-
 export const toCompatSourceCredentialBinding = (
   binding: SourceAuthBinding,
   connection: AuthConnection,
+  hasSecret: boolean,
 ): SourceCredentialBinding => ({
   id: binding.id as unknown as SourceCredentialBinding["id"],
   credentialId: connection.id as unknown as SourceCredentialBinding["credentialId"],
@@ -73,8 +60,7 @@ export const toCompatSourceCredentialBinding = (
   scopeType: binding.scopeType,
   sourceKey: sourceKeyFromSourceId(binding.sourceId),
   provider: providerFromStrategy(connection.strategy),
-  secretProvider: "local",
-  secretRef: maskedSecretRef(connection),
+  hasSecret,
   additionalHeadersJson: connection.additionalHeadersJson,
   boundAuthFingerprint: null,
   createdAt: binding.createdAt,
@@ -111,7 +97,7 @@ export type OAuthRefreshConfig = {
   tokenEndpoint?: string;
   authorizationServer?: string;
   clientId?: string;
-  clientSecretCiphertext?: string;
+  clientSecretHandle?: string;
   sourceUrl?: string;
   clientInformationJson?: string;
 };
@@ -132,8 +118,8 @@ export const parseOAuthRefreshConfig = (value: string | null): OAuthRefreshConfi
     ...(normalizeString(parsed.clientId)
       ? { clientId: normalizeString(parsed.clientId)! }
       : {}),
-    ...(normalizeString(parsed.clientSecretCiphertext)
-      ? { clientSecretCiphertext: normalizeString(parsed.clientSecretCiphertext)! }
+    ...(normalizeString(parsed.clientSecretHandle)
+      ? { clientSecretHandle: normalizeString(parsed.clientSecretHandle)! }
       : {}),
     ...(normalizeString(parsed.sourceUrl)
       ? { sourceUrl: normalizeString(parsed.sourceUrl)! }
@@ -150,7 +136,7 @@ export const encodeOAuthRefreshConfig = (config: OAuthRefreshConfig): string | n
   if (config.tokenEndpoint) payload.tokenEndpoint = config.tokenEndpoint;
   if (config.authorizationServer) payload.authorizationServer = config.authorizationServer;
   if (config.clientId) payload.clientId = config.clientId;
-  if (config.clientSecretCiphertext) payload.clientSecretCiphertext = config.clientSecretCiphertext;
+  if (config.clientSecretHandle) payload.clientSecretHandle = config.clientSecretHandle;
   if (config.sourceUrl) payload.sourceUrl = config.sourceUrl;
   if (config.clientInformationJson) payload.clientInformationJson = config.clientInformationJson;
 
@@ -172,9 +158,7 @@ export const buildOAuthRefreshConfigFromPayload = (
     normalizeString(payload.oauthAuthorizationServer)
     ?? existing.authorizationServer,
   clientId: normalizeString(payload.oauthClientId) ?? existing.clientId,
-  clientSecretCiphertext:
-    normalizeString(payload.oauthClientSecret)
-    ?? existing.clientSecretCiphertext,
+  clientSecretHandle: existing.clientSecretHandle,
   sourceUrl: normalizeString(payload.oauthSourceUrl) ?? existing.sourceUrl,
   clientInformationJson:
     normalizeString(payload.oauthClientInformationJson)

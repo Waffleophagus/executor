@@ -9,6 +9,8 @@ import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import { type OrganizationId, type WorkspaceId } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
 
+import { type SecretMaterialStore } from "./secret-material-store";
+
 type CredentialResolverRows = {
   workspaces: Pick<SqlControlPlanePersistence["rows"]["workspaces"], "getById">;
   sourceAuthBindings: Pick<
@@ -163,6 +165,7 @@ const buildSecretHeaders = (
 
 export const createPmResolveToolCredentials = (
   rows: CredentialResolverRows,
+  secretMaterialStore: SecretMaterialStore,
 ): ResolveToolCredentials =>
   makeCredentialResolver((input) =>
     Effect.gen(function* () {
@@ -288,7 +291,29 @@ export const createPmResolveToolCredentials = (
           );
         const oauthState = oauthStateOption._tag === "Some" ? oauthStateOption.value : null;
 
-        const accessToken = normalizeString(oauthState?.accessTokenCiphertext);
+        const accessToken = oauthState?.accessTokenHandle
+          ? yield* secretMaterialStore
+            .get({
+              handle: oauthState.accessTokenHandle,
+              scope: {
+                organizationId: connection.organizationId,
+                workspaceId: connection.workspaceId,
+                accountId: connection.accountId,
+                connectionId: connection.id,
+                purpose: "oauth_access_token",
+              },
+            })
+            .pipe(
+              Effect.map(normalizeString),
+              Effect.mapError((error) =>
+                toCredentialResolverError(
+                  "resolve_oauth_access_token",
+                  error.message,
+                  error.details,
+                ),
+              ),
+            )
+          : null;
         const oauthHeaders = accessToken
           ? ({ Authorization: `Bearer ${accessToken}` } as Record<string, string>)
           : {};
@@ -317,11 +342,32 @@ export const createPmResolveToolCredentials = (
         };
       }
 
+      const secretValue = yield* secretMaterialStore
+        .get({
+          handle: material.materialHandle,
+          scope: {
+            organizationId: connection.organizationId,
+            workspaceId: connection.workspaceId,
+            accountId: connection.accountId,
+            connectionId: connection.id,
+            purpose: "auth_material",
+          },
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            toCredentialResolverError(
+              "resolve_auth_material",
+              error.message,
+              error.details,
+            ),
+          ),
+        );
+
       return {
         headers: mergeHeaders(
           buildSecretHeaders(
             connection.strategy,
-            material.ciphertext,
+            secretValue,
             connection.metadataJson,
           ),
           additionalHeaders,

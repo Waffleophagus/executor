@@ -171,6 +171,7 @@ const buildFetchRequest = (
   source: Source,
   payload: OpenApiInvocationPayload,
   args: OpenApiToolArgs,
+  credentialHeaders: Readonly<Record<string, string>> = {},
 ): Effect.Effect<BuiltFetchRequest, ToolProviderError> =>
   Effect.gen(function* () {
     const resolvedPath = yield* replacePathTemplate(payload.pathTemplate, args, payload);
@@ -245,6 +246,10 @@ const buildFetchRequest = (
           headers.set("content-type", "application/json");
         }
       }
+    }
+
+    for (const [key, value] of Object.entries(credentialHeaders)) {
+      headers.set(key, value);
     }
 
     return {
@@ -342,7 +347,12 @@ export const makeOpenApiToolProvider = (): ToolProvider => ({
         ),
       );
 
-      const request = yield* buildFetchRequest(input.source, payload, args);
+      const request = yield* buildFetchRequest(
+        input.source,
+        payload,
+        args,
+        input.credentialHeaders,
+      );
 
       const response = yield* Effect.tryPromise({
         try: () => fetch(request.url, request.init),

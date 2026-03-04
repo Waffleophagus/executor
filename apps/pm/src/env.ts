@@ -6,6 +6,11 @@ import { type WorkspaceId } from "@executor-v2/schema";
 import { configSchema, server } from "better-env/config-schema";
 import * as path from "node:path";
 
+import {
+  parseSecretMaterialBackendKind,
+  type SecretMaterialBackendKind,
+} from "./secret-material-store";
+
 const defaultStateRootDir = ".executor-v2/pm-state";
 const defaultWorkspaceId = "ws_local" as WorkspaceId;
 
@@ -60,6 +65,10 @@ const pmEnvConfig = configSchema("PmEnvironment", {
     env: "CLOUDFLARE_SANDBOX_CALLBACK_SECRET",
     optional: true,
   }),
+  secretMaterialBackend: server({
+    env: "PM_SECRET_MATERIAL_BACKEND",
+    optional: true,
+  }),
 });
 
 const readToolExposureMode = (value: string | undefined): "all_tools" | "sources_only" =>
@@ -77,6 +86,7 @@ export type PmEnvironment = {
   runtimeKind: string | undefined;
   localAdminFallbackEnabled: boolean;
   runtimeCallbackSecret: string | undefined;
+  secretMaterialBackend: SecretMaterialBackendKind;
 };
 
 export const readPmEnvironment = (): PmEnvironment => {
@@ -104,5 +114,8 @@ export const readPmEnvironment = (): PmEnvironment => {
     runtimeKind: trim(env.runtimeKind),
     localAdminFallbackEnabled,
     runtimeCallbackSecret: trim(env.runtimeCallbackSecret),
+    secretMaterialBackend:
+      parseSecretMaterialBackendKind(env.secretMaterialBackend)
+      ?? "keychain",
   };
 };

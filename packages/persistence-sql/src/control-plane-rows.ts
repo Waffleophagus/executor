@@ -7,6 +7,7 @@ import {
   type OrganizationMembership,
   type Policy,
   type Profile,
+  type SecretMaterial,
   type SourceAuthBinding,
   type StorageInstance,
   type Workspace,
@@ -593,6 +594,69 @@ export const createControlPlaneRows = ({
           await db
             .delete(tables.oauthStatesTable)
             .where(eq(tables.oauthStatesTable.connectionId, connectionId));
+        },
+      ),
+  },
+
+  secretMaterials: {
+    list: () =>
+      rowEffect(
+        backend,
+        "rows.secret_materials.list",
+        tableNames.secretMaterials,
+        async () => {
+          const rows = await db
+            .select()
+            .from(tables.secretMaterialsTable)
+            .orderBy(asc(tables.secretMaterialsTable.updatedAt), asc(tables.secretMaterialsTable.handle));
+
+          return asDomainArray<SecretMaterial>(rows);
+        },
+      ),
+
+    getByHandle: (handle: SecretMaterial["handle"]) =>
+      rowEffect(
+        backend,
+        "rows.secret_materials.get_by_handle",
+        tableNames.secretMaterials,
+        async () => {
+          const row = await db
+            .select()
+            .from(tables.secretMaterialsTable)
+            .where(eq(tables.secretMaterialsTable.handle, handle))
+            .limit(1);
+
+          return row[0]
+            ? Option.some(asDomain<SecretMaterial>(row[0]))
+            : Option.none<SecretMaterial>();
+        },
+      ),
+
+    upsert: (material: SecretMaterial) =>
+      rowEffect(
+        backend,
+        "rows.secret_materials.upsert",
+        tableNames.secretMaterials,
+        async () => {
+          await db
+            .insert(tables.secretMaterialsTable)
+            .values(material)
+            .onConflictDoUpdate({
+              target: tables.secretMaterialsTable.handle,
+              set: withoutCreatedAt(material),
+            });
+        },
+      ),
+
+    removeByHandle: (handle: SecretMaterial["handle"]) =>
+      rowEffect(
+        backend,
+        "rows.secret_materials.remove_by_handle",
+        tableNames.secretMaterials,
+        async () => {
+          await db
+            .delete(tables.secretMaterialsTable)
+            .where(eq(tables.secretMaterialsTable.handle, handle));
         },
       ),
   },

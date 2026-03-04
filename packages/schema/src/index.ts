@@ -11,6 +11,7 @@ export * from "./models/auth-connection";
 export * from "./models/source-auth-binding";
 export * from "./models/auth-material";
 export * from "./models/oauth-state";
+export * from "./models/secret-material";
 export * from "./models/auth-audit-event";
 export * from "./models/policy";
 export * from "./models/approval";

@@ -501,7 +501,7 @@ export function SourceManagementPanel({ editSource, onDone }: SourceManagementPa
                   scopeType,
                   sourceKey,
                   provider: "oauth2",
-                  secretRef: oauthSessionForEndpoint.accessToken,
+                  secret: oauthSessionForEndpoint.accessToken,
                   accountId: null,
                   additionalHeadersJson: null,
                   boundAuthFingerprint: null,

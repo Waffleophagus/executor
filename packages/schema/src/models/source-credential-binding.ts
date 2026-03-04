@@ -4,7 +4,6 @@ import { TimestampMsSchema } from "../common";
 import {
   CredentialProviderSchema,
   CredentialScopeTypeSchema,
-  CredentialSecretProviderSchema,
 } from "../enums";
 import {
   AccountIdSchema,
@@ -23,8 +22,7 @@ export const SourceCredentialBindingSchema = Schema.Struct({
   scopeType: CredentialScopeTypeSchema,
   sourceKey: Schema.String,
   provider: CredentialProviderSchema,
-  secretProvider: Schema.optional(CredentialSecretProviderSchema),
-  secretRef: Schema.String,
+  hasSecret: Schema.Boolean,
   additionalHeadersJson: Schema.NullOr(Schema.String),
   boundAuthFingerprint: Schema.NullOr(Schema.String),
   createdAt: TimestampMsSchema,

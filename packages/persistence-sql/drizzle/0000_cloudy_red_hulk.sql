@@ -42,8 +42,8 @@ CREATE TABLE "auth_connections" (
 CREATE TABLE "auth_materials" (
 	"id" text PRIMARY KEY NOT NULL,
 	"connection_id" text NOT NULL,
-	"ciphertext" text NOT NULL,
-	"key_version" text NOT NULL,
+	"backend" text NOT NULL,
+	"material_handle" text NOT NULL,
 	"created_at" bigint NOT NULL,
 	"updated_at" bigint NOT NULL
 );
@@ -51,9 +51,10 @@ CREATE TABLE "auth_materials" (
 CREATE TABLE "oauth_states" (
 	"id" text PRIMARY KEY NOT NULL,
 	"connection_id" text NOT NULL,
-	"access_token_ciphertext" text NOT NULL,
-	"refresh_token_ciphertext" text,
-	"key_version" text NOT NULL,
+	"backend" text NOT NULL,
+	"access_token_handle" text NOT NULL,
+	"refresh_token_handle" text,
+	"client_secret_handle" text,
 	"expires_at" bigint,
 	"scope" text,
 	"token_type" text,
@@ -117,6 +118,20 @@ CREATE TABLE "profile" (
 	"created_at" bigint NOT NULL,
 	"updated_at" bigint NOT NULL,
 	CONSTRAINT "profile_runtime_mode_check" CHECK ("profile"."runtime_mode" in ('local', 'linked', 'remote'))
+);
+--> statement-breakpoint
+CREATE TABLE "secret_materials" (
+	"handle" text PRIMARY KEY NOT NULL,
+	"backend" text NOT NULL,
+	"organization_id" text NOT NULL,
+	"workspace_id" text,
+	"account_id" text,
+	"connection_id" text NOT NULL,
+	"purpose" text NOT NULL,
+	"material" text NOT NULL,
+	"created_at" bigint NOT NULL,
+	"updated_at" bigint NOT NULL,
+	CONSTRAINT "secret_materials_purpose_check" CHECK ("secret_materials"."purpose" in ('auth_material', 'oauth_access_token', 'oauth_refresh_token', 'oauth_client_secret'))
 );
 --> statement-breakpoint
 CREATE TABLE "source_auth_bindings" (
@@ -247,7 +262,9 @@ CREATE INDEX "auth_connections_workspace_idx" ON "auth_connections" USING btree 
 CREATE INDEX "auth_connections_account_idx" ON "auth_connections" USING btree ("account_id");--> statement-breakpoint
 CREATE INDEX "auth_connections_org_updated_idx" ON "auth_connections" USING btree ("organization_id","updated_at","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_materials_connection_idx" ON "auth_materials" USING btree ("connection_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_materials_material_handle_idx" ON "auth_materials" USING btree ("material_handle");--> statement-breakpoint
 CREATE UNIQUE INDEX "oauth_states_connection_idx" ON "oauth_states" USING btree ("connection_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "oauth_states_access_token_handle_idx" ON "oauth_states" USING btree ("access_token_handle");--> statement-breakpoint
 CREATE INDEX "organization_memberships_org_idx" ON "organization_memberships" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "organization_memberships_account_idx" ON "organization_memberships" USING btree ("account_id");--> statement-breakpoint
 CREATE INDEX "organization_memberships_org_updated_idx" ON "organization_memberships" USING btree ("organization_id","updated_at","id");--> statement-breakpoint
@@ -258,6 +275,8 @@ CREATE INDEX "organizations_updated_idx" ON "organizations" USING btree ("update
 CREATE INDEX "policies_workspace_idx" ON "policies" USING btree ("workspace_id","updated_at","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "policies_workspace_tool_path_idx" ON "policies" USING btree ("workspace_id","tool_path_pattern");--> statement-breakpoint
 CREATE INDEX "profile_updated_idx" ON "profile" USING btree ("updated_at","id");--> statement-breakpoint
+CREATE INDEX "secret_materials_connection_idx" ON "secret_materials" USING btree ("connection_id","updated_at");--> statement-breakpoint
+CREATE INDEX "secret_materials_org_idx" ON "secret_materials" USING btree ("organization_id","updated_at");--> statement-breakpoint
 CREATE INDEX "source_auth_bindings_source_idx" ON "source_auth_bindings" USING btree ("source_id");--> statement-breakpoint
 CREATE INDEX "source_auth_bindings_connection_idx" ON "source_auth_bindings" USING btree ("connection_id","updated_at","id");--> statement-breakpoint
 CREATE INDEX "source_auth_bindings_org_idx" ON "source_auth_bindings" USING btree ("organization_id");--> statement-breakpoint

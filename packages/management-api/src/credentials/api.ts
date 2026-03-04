@@ -14,19 +14,22 @@ import {
 } from "../errors";
 
 const RequiredUpsertCredentialBindingPayloadSchema = SourceCredentialBindingSchema.pipe(
-  Schema.pick("credentialId", "scopeType", "sourceKey", "provider", "secretRef"),
+  Schema.pick("credentialId", "scopeType", "sourceKey", "provider"),
 );
 
 const OptionalUpsertCredentialBindingPayloadSchema = SourceCredentialBindingSchema.pipe(
   Schema.pick(
     "id",
     "accountId",
-    "secretProvider",
     "additionalHeadersJson",
     "boundAuthFingerprint",
   ),
   Schema.partialWith({ exact: true }),
 );
+
+const UpsertCredentialSecretPayloadSchema = Schema.Struct({
+  secret: Schema.String,
+});
 
 const OptionalOAuthUpsertFieldsSchema = Schema.Struct({
   oauthRefreshToken: Schema.NullOr(Schema.String),
@@ -43,6 +46,7 @@ const OptionalOAuthUpsertFieldsSchema = Schema.Struct({
 
 export const UpsertCredentialBindingPayloadSchema =
   RequiredUpsertCredentialBindingPayloadSchema.pipe(
+    Schema.extend(UpsertCredentialSecretPayloadSchema),
     Schema.extend(OptionalUpsertCredentialBindingPayloadSchema),
     Schema.extend(OptionalOAuthUpsertFieldsSchema),
   );

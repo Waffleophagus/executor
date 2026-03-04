@@ -9,6 +9,8 @@ import {
   makeSourceManagerService,
 } from "@executor-v2/management-api";
 import {
+  RuntimeToolInvokerError,
+  createRuntimeToolCallHandler,
   createRunExecutor,
   createSourceToolRegistry,
   defaultExecuteToolExposureMode,
@@ -19,6 +21,7 @@ import {
   makeRuntimeAdapterRegistry,
   makeToolProviderRegistry,
   parseExecuteToolExposureMode,
+  sourceIdFromToolPath,
 } from "@executor-v2/engine";
 import {
   makeSqlControlPlanePersistence,
@@ -46,11 +49,17 @@ import {
   createPmApprovalsService,
   createPmPersistentToolApprovalPolicy,
 } from "../../../pm/src/approvals-service";
+import { createPmResolveToolCredentials } from "../../../pm/src/credential-resolver";
 import { createPmCredentialsService } from "../../../pm/src/credentials-service";
 import { createPmMcpHandler } from "../../../pm/src/mcp-handler";
 import { createPmOrganizationsService } from "../../../pm/src/organizations-service";
 import { createPmPoliciesService } from "../../../pm/src/policies-service";
 import { createPmExecuteRuntimeRun } from "../../../pm/src/runtime-execution-port";
+import {
+  createKeychainSecretMaterialStore,
+  createSqlSecretMaterialStore,
+  parseSecretMaterialBackendKind,
+} from "../../../pm/src/secret-material-store";
 import { createPmStorageService } from "../../../pm/src/storage-service";
 import { createPmToolsService } from "../../../pm/src/tools-service";
 import { createPmWorkspacesService } from "../../../pm/src/workspaces-service";
@@ -342,10 +351,11 @@ let runtimePromise: Promise<ControlPlaneRuntime> | undefined;
 
 const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
   const stateRootDir = resolveStateRootDir();
+  const runtimeDatabaseUrl = resolveDatabaseUrl();
 
   const persistence = await Effect.runPromise(
     makeSqlControlPlanePersistence({
-      databaseUrl: resolveDatabaseUrl(),
+      databaseUrl: runtimeDatabaseUrl,
       localDataDir: resolveControlPlaneDataDir(),
       postgresApplicationName: "executor-v2-web",
     }),
@@ -353,6 +363,13 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
 
   const sourceStore = persistence.sourceStore;
   const toolArtifactStore = persistence.toolArtifactStore;
+  const configuredSecretBackend = parseSecretMaterialBackendKind(
+    webServerEnvironment.controlPlaneSecretMaterialBackend,
+  );
+  const secretMaterialBackend = configuredSecretBackend ?? (runtimeDatabaseUrl ? "sql" : "keychain");
+  const secretMaterialStore = secretMaterialBackend === "sql"
+    ? createSqlSecretMaterialStore(persistence.rows.secretMaterials)
+    : createKeychainSecretMaterialStore();
   const runtimeAdapterList = [
     // makeLocalInProcessRuntimeAdapter(),
     makeCloudflareWorkerLoaderRuntimeAdapter(),
@@ -378,9 +395,14 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
       requireApprovals: requireToolApprovals,
     },
   );
+  const resolveCredentials = createPmResolveToolCredentials(
+    persistence.rows,
+    secretMaterialStore,
+  );
   const mcpSessions = new Map<string, {
     handler: (request: Request) => Promise<Response>;
     toolRegistry: ReturnType<typeof createSourceToolRegistry>;
+    runtimeToolCallHandler: ReturnType<typeof createRuntimeToolCallHandler>;
   }>();
   const workspaceByRunId = new Map<string, string>();
   const runCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -491,7 +513,7 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
 
   const controlPlaneService = makeControlPlaneService({
     sources: sourcesService,
-    credentials: createPmCredentialsService(persistence.rows),
+    credentials: createPmCredentialsService(persistence.rows, secretMaterialStore),
     policies: createPmPoliciesService(persistence.rows),
     organizations: createPmOrganizationsService(persistence.rows),
     workspaces: createPmWorkspacesService(persistence.rows),
@@ -526,6 +548,7 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
   const resolveMcpSession = (workspaceId: string): {
     handler: (request: Request) => Promise<Response>;
     toolRegistry: ReturnType<typeof createSourceToolRegistry>;
+    runtimeToolCallHandler: ReturnType<typeof createRuntimeToolCallHandler>;
   } => {
     const existing = mcpSessions.get(workspaceId);
     if (existing) {
@@ -559,6 +582,35 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
     const session = {
       handler: next,
       toolRegistry,
+      runtimeToolCallHandler: createRuntimeToolCallHandler({
+        resolveCredentials,
+        invokeRuntimeTool: ({ request, credentials }) => {
+          const sourceId = sourceIdFromToolPath(request.toolPath);
+          const requestWithCredentialContext = request.credentialContext || !sourceId
+            ? request
+            : {
+              ...request,
+              credentialContext: {
+                workspaceId,
+                sourceKey: `source:${sourceId}`,
+              },
+            };
+
+          return invokeRuntimeToolCallResult(toolRegistry, {
+            ...requestWithCredentialContext,
+            credentialHeaders: credentials.headers,
+          }).pipe(
+            Effect.mapError(
+              (error) =>
+                new RuntimeToolInvokerError({
+                  operation: "invoke_runtime_tool",
+                  message: error.message,
+                  details: error.details,
+                }),
+            ),
+          );
+        },
+      }),
     };
 
     mcpSessions.set(workspaceId, session);
@@ -606,22 +658,7 @@ const createControlPlaneRuntime = async (): Promise<ControlPlaneRuntime> => {
 
       const session = resolveMcpSession(workspaceId);
 
-      const result = await Effect.runPromise(
-        invokeRuntimeToolCallResult(session.toolRegistry, input).pipe(
-          Effect.catchTag("RuntimeAdapterError", (error) =>
-            Effect.succeed<RuntimeToolCallResult>(
-              toFailedRuntimeToolCallResult(
-                error.details ? `${error.message}: ${error.details}` : error.message,
-              ),
-            )
-          ),
-          Effect.catchAll((cause) =>
-            Effect.succeed<RuntimeToolCallResult>(
-              toFailedRuntimeToolCallResult(formatCause(cause)),
-            )
-          ),
-        ),
-      );
+      const result = await Effect.runPromise(session.runtimeToolCallHandler(input));
 
       return Response.json(result, { status: 200 });
     },

@@ -29,6 +29,10 @@ const webServerEnvConfig = configSchema("WebServerEnvironment", {
     env: "EXECUTOR_ALLOW_LOCAL_MCP_OAUTH",
     optional: true,
   }),
+  controlPlaneSecretMaterialBackend: server({
+    env: "CONTROL_PLANE_SECRET_MATERIAL_BACKEND",
+    optional: true,
+  }),
 });
 
 const env = webServerEnvConfig.server;
@@ -52,4 +56,5 @@ export const webServerEnvironment = {
   workosAuthkitIssuer: trim(env.workosAuthkitIssuer),
   workosAuthkitDomain: trim(env.workosAuthkitDomain),
   executorAllowLocalMcpOauth: isTruthy(env.executorAllowLocalMcpOauth),
+  controlPlaneSecretMaterialBackend: trim(env.controlPlaneSecretMaterialBackend),
 };

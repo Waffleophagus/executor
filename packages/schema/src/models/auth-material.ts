@@ -6,8 +6,8 @@ import { AuthConnectionIdSchema, AuthMaterialIdSchema } from "../ids";
 export const AuthMaterialSchema = Schema.Struct({
   id: AuthMaterialIdSchema,
   connectionId: AuthConnectionIdSchema,
-  ciphertext: Schema.String,
-  keyVersion: Schema.String,
+  backend: Schema.String,
+  materialHandle: Schema.String,
   createdAt: TimestampMsSchema,
   updatedAt: TimestampMsSchema,
 });

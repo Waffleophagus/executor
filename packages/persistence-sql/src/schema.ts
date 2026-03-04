@@ -22,6 +22,7 @@ export const tableNames = {
   sourceAuthBindings: "source_auth_bindings",
   authMaterials: "auth_materials",
   oauthStates: "oauth_states",
+  secretMaterials: "secret_materials",
   policies: "policies",
   approvals: "approvals",
   taskRuns: "task_runs",
@@ -298,13 +299,14 @@ export const authMaterialsTable = pgTable(
   {
     id: text("id").notNull().primaryKey(),
     connectionId: text("connection_id").notNull(),
-    ciphertext: text("ciphertext").notNull(),
-    keyVersion: text("key_version").notNull(),
+    backend: text("backend").notNull(),
+    materialHandle: text("material_handle").notNull(),
     createdAt: bigint("created_at", { mode: "number" }).notNull(),
     updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
   },
   (table) => [
     uniqueIndex("auth_materials_connection_idx").on(table.connectionId),
+    uniqueIndex("auth_materials_material_handle_idx").on(table.materialHandle),
   ],
 );
 
@@ -313,9 +315,10 @@ export const oauthStatesTable = pgTable(
   {
     id: text("id").notNull().primaryKey(),
     connectionId: text("connection_id").notNull(),
-    accessTokenCiphertext: text("access_token_ciphertext").notNull(),
-    refreshTokenCiphertext: text("refresh_token_ciphertext"),
-    keyVersion: text("key_version").notNull(),
+    backend: text("backend").notNull(),
+    accessTokenHandle: text("access_token_handle").notNull(),
+    refreshTokenHandle: text("refresh_token_handle"),
+    clientSecretHandle: text("client_secret_handle"),
     expiresAt: bigint("expires_at", { mode: "number" }),
     scope: text("scope"),
     tokenType: text("token_type"),
@@ -334,8 +337,33 @@ export const oauthStatesTable = pgTable(
   },
   (table) => [
     uniqueIndex("oauth_states_connection_idx").on(table.connectionId),
+    uniqueIndex("oauth_states_access_token_handle_idx").on(table.accessTokenHandle),
     check("oauth_states_token_version_nonnegative", sql`${table.tokenVersion} >= 0`),
     check("oauth_states_lease_fence_nonnegative", sql`${table.leaseFence} >= 0`),
+  ],
+);
+
+export const secretMaterialsTable = pgTable(
+  tableNames.secretMaterials,
+  {
+    handle: text("handle").notNull().primaryKey(),
+    backend: text("backend").notNull(),
+    organizationId: text("organization_id").notNull(),
+    workspaceId: text("workspace_id"),
+    accountId: text("account_id"),
+    connectionId: text("connection_id").notNull(),
+    purpose: text("purpose").notNull(),
+    material: text("material").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    index("secret_materials_connection_idx").on(table.connectionId, table.updatedAt),
+    index("secret_materials_org_idx").on(table.organizationId, table.updatedAt),
+    check(
+      "secret_materials_purpose_check",
+      sql`${table.purpose} in ('auth_material', 'oauth_access_token', 'oauth_refresh_token', 'oauth_client_secret')`,
+    ),
   ],
 );
 

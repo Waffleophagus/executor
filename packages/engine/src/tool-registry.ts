@@ -1,5 +1,5 @@
 import type {
-  RuntimeToolCallRequest,
+  RuntimeToolCallCredentialContext,
   RuntimeToolCallResult,
 } from "@executor-v2/sdk";
 import type { DiscoveryTypingPayload } from "@executor-v2/schema";
@@ -15,6 +15,8 @@ export type ToolRegistryCallInput = {
   callId: string;
   toolPath: string;
   input?: Record<string, unknown>;
+  credentialContext?: RuntimeToolCallCredentialContext;
+  credentialHeaders?: Readonly<Record<string, string>>;
 };
 
 export type ToolRegistryDiscoverDepth = 0 | 1 | 2;
@@ -868,7 +870,7 @@ export const createStaticToolRegistry = (
 });
 
 export const createRuntimeToolCallResultHandler = (
-  request: RuntimeToolCallRequest,
+  request: ToolRegistryCallInput,
   result: RuntimeToolCallResult,
 ): Effect.Effect<unknown, RuntimeAdapterError> => {
   if (result.ok) {
@@ -909,7 +911,7 @@ export const createRuntimeToolCallResultHandler = (
 
 export const invokeRuntimeToolCallResult = (
   toolRegistry: ToolRegistry,
-  input: RuntimeToolCallRequest,
+  input: ToolRegistryCallInput,
 ): Effect.Effect<RuntimeToolCallResult, RuntimeAdapterError> => {
   if (input.toolPath === "discover") {
     return toolRegistry.discover(normalizeDiscoverInput(input.input)).pipe(

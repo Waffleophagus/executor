@@ -3,6 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/cli": "^0.73.2",
+    "@effect/platform": "catalog:",
+    "@effect/platform-bun": "^0.86.0",
+    "@effect/typeclass": "^0.38.0",
+    "@executor-v2/management-api": "workspace:*",
+    "effect": "catalog:"
   }
 }

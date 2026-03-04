@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { type RuntimeToolCallCredentialContext } from "@executor-v2/sdk";
 
 export type RuntimeAdapterKind = string;
 
@@ -11,6 +12,7 @@ export type RuntimeToolCallService = {
     callId: string;
     toolPath: string;
     input?: Record<string, unknown>;
+    credentialContext?: RuntimeToolCallCredentialContext;
   }) => Effect.Effect<unknown, RuntimeAdapterError>;
 };
 

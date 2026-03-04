@@ -63,7 +63,7 @@ export function CredentialsView() {
   const [credentialScopeType, setCredentialScopeType] =
     useState<CredentialScopeType>("workspace");
   const [credentialIdInput, setCredentialIdInput] = useState("");
-  const [credentialSecretRef, setCredentialSecretRef] = useState("");
+  const [credentialSecretValue, setCredentialSecretValue] = useState("");
   const [credentialAccountId, setCredentialAccountId] = useState("");
   const [credentialAdditionalHeadersJson, setCredentialAdditionalHeadersJson] =
     useState("");
@@ -116,7 +116,7 @@ export function CredentialsView() {
     setCredentialProvider("api_key");
     setCredentialScopeType("workspace");
     setCredentialIdInput("");
-    setCredentialSecretRef("");
+    setCredentialSecretValue("");
     setCredentialAccountId("");
     setCredentialAdditionalHeadersJson("");
     setCredentialBoundAuthFingerprint("");
@@ -134,7 +134,7 @@ export function CredentialsView() {
     setCredentialProvider(binding.provider);
     setCredentialScopeType(binding.scopeType);
     setCredentialIdInput(binding.credentialId);
-    setCredentialSecretRef("");
+    setCredentialSecretValue("");
     setCredentialAccountId(binding.accountId ?? "");
     setCredentialAdditionalHeadersJson(binding.additionalHeadersJson ?? "");
     setCredentialBoundAuthFingerprint(binding.boundAuthFingerprint ?? "");
@@ -155,13 +155,13 @@ export function CredentialsView() {
 
     const sourceKey = credentialSourceKey.trim();
     const credentialId = credentialIdInput.trim();
-    const secretRef = credentialSecretRef.trim();
+    const secret = credentialSecretValue.trim();
     const accountId = credentialAccountId.trim();
     const additionalHeadersJson = credentialAdditionalHeadersJson.trim();
     const boundAuthFingerprint = credentialBoundAuthFingerprint.trim();
 
-    if (sourceKey.length === 0 || credentialId.length === 0 || secretRef.length === 0) {
-      setErrorStatus("Source key, credential id, and secret ref are required.");
+    if (sourceKey.length === 0 || credentialId.length === 0 || secret.length === 0) {
+      setErrorStatus("Source key, credential id, and secret are required.");
       return;
     }
 
@@ -184,7 +184,7 @@ export function CredentialsView() {
         scopeType: credentialScopeType,
         sourceKey,
         provider: credentialProvider,
-        secretRef,
+        secret,
         accountId:
           credentialScopeType === "account"
             ? (accountId as SourceCredentialBinding["accountId"])
@@ -255,14 +255,14 @@ export function CredentialsView() {
               <label className="text-xs text-muted-foreground" htmlFor="credential-source-key">
                 Source key
               </label>
-              <Input
-                id="credential-source-key"
-                value={credentialSourceKey}
-                onChange={(event) => setCredentialSourceKey(event.target.value)}
-                placeholder="source_github"
-                required
-                disabled={credentialBusyId !== null}
-              />
+                <Input
+                  id="credential-source-key"
+                  value={credentialSourceKey}
+                  onChange={(event) => setCredentialSourceKey(event.target.value)}
+                  placeholder="source:src_github"
+                  required
+                  disabled={credentialBusyId !== null}
+                />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -328,15 +328,15 @@ export function CredentialsView() {
               <div className="grid gap-1.5">
                 <label
                   className="text-xs text-muted-foreground"
-                  htmlFor="credential-secret-ref"
+                  htmlFor="credential-secret"
                 >
-                  Secret ref
+                  Secret
                 </label>
                 <Input
-                  id="credential-secret-ref"
-                  value={credentialSecretRef}
-                  onChange={(event) => setCredentialSecretRef(event.target.value)}
-                  placeholder="secrets/github-token"
+                  id="credential-secret"
+                  value={credentialSecretValue}
+                  onChange={(event) => setCredentialSecretValue(event.target.value)}
+                  placeholder="Paste secret value"
                   required
                   disabled={credentialBusyId !== null}
                 />
@@ -476,7 +476,7 @@ export function CredentialsView() {
                             <span>{binding.credentialId}</span>
                           </div>
                           <p className="break-all text-xs text-muted-foreground">
-                            secret {binding.secretRef}
+                            secret {binding.hasSecret ? "configured" : "missing"}
                           </p>
                           {binding.accountId ? (
                             <p className="break-all text-xs text-muted-foreground">

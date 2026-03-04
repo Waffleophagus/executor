@@ -25,6 +25,10 @@ import {
   strategyFromProvider,
   toCompatSourceCredentialBinding,
 } from "./credentials-helpers";
+import {
+  type SecretMaterialScope,
+  type SecretMaterialStore,
+} from "./secret-material-store";
 
 type CredentialRows = Pick<
   SqlControlPlanePersistence["rows"],
@@ -33,12 +37,45 @@ type CredentialRows = Pick<
   | "sourceAuthBindings"
   | "authMaterials"
   | "oauthStates"
+  | "secretMaterials"
 >;
 
 const sourceStoreError = createSqlSourceStoreErrorMapper("credentials");
 
+const toSecretScope = (input: {
+  organizationId: AuthConnection["organizationId"];
+  workspaceId: AuthConnection["workspaceId"];
+  accountId: AuthConnection["accountId"];
+  connectionId: AuthConnection["id"];
+  purpose: SecretMaterialScope["purpose"];
+}): SecretMaterialScope => ({
+  organizationId: input.organizationId,
+  workspaceId: input.workspaceId,
+  accountId: input.accountId,
+  connectionId: input.connectionId,
+  purpose: input.purpose,
+});
+
+const uniqueHandles = (handles: ReadonlyArray<string | null | undefined>): Array<string> => {
+  const seen = new Set<string>();
+  const next: Array<string> = [];
+
+  for (const handle of handles) {
+    const trimmed = handle?.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+
+    seen.add(trimmed);
+    next.push(trimmed);
+  }
+
+  return next;
+};
+
 export const createPmCredentialsService = (
   rows: CredentialRows,
+  secretMaterialStore: SecretMaterialStore,
 ): ControlPlaneCredentialsServiceShape =>
   makeControlPlaneCredentialsService({
     listCredentialBindings: (workspaceId) =>
@@ -58,7 +95,7 @@ export const createPmCredentialsService = (
           );
         }
 
-        const [bindings, connections] = yield* Effect.all([
+        const [bindings, connections, authMaterials, oauthStates] = yield* Effect.all([
           rows.sourceAuthBindings
             .listByWorkspaceScope(workspaceId, workspace.organizationId)
             .pipe(
@@ -71,9 +108,29 @@ export const createPmCredentialsService = (
               sourceStoreError.fromRowStore("credentials.connections.list", error),
             ),
           ),
+          rows.authMaterials.list().pipe(
+            Effect.mapError((error) =>
+              sourceStoreError.fromRowStore("credentials.materials.list", error),
+            ),
+          ),
+          rows.oauthStates.list().pipe(
+            Effect.mapError((error) =>
+              sourceStoreError.fromRowStore("credentials.oauth_states.list", error),
+            ),
+          ),
         ]);
 
         const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
+        const authMaterialByConnectionId = new Set(
+          authMaterials
+            .filter((material) => material.materialHandle.trim().length > 0)
+            .map((material) => material.connectionId),
+        );
+        const oauthStateByConnectionId = new Set(
+          oauthStates
+            .filter((oauthState) => oauthState.accessTokenHandle.trim().length > 0)
+            .map((oauthState) => oauthState.connectionId),
+        );
 
         const compatBindings: Array<SourceCredentialBinding> = [];
 
@@ -84,7 +141,11 @@ export const createPmCredentialsService = (
             continue;
           }
 
-          compatBindings.push(toCompatSourceCredentialBinding(binding, connection));
+          const hasSecret = connection.strategy === "oauth2"
+            ? oauthStateByConnectionId.has(connection.id)
+            : authMaterialByConnectionId.has(connection.id);
+
+          compatBindings.push(toCompatSourceCredentialBinding(binding, connection, hasSecret));
         }
 
         return sortCredentialBindings(compatBindings);
@@ -232,6 +293,25 @@ export const createPmCredentialsService = (
           updatedAt: now,
         };
 
+        const removeHandles = (handles: ReadonlyArray<string | null | undefined>) =>
+          Effect.forEach(
+            uniqueHandles(handles),
+            (handle) =>
+              secretMaterialStore
+                .remove({
+                  handle,
+                  scope: toSecretScope({
+                    organizationId,
+                    workspaceId: scopeWorkspaceId,
+                    accountId: scopeAccountId,
+                    connectionId: requestedConnectionId,
+                    purpose: "auth_material",
+                  }),
+                })
+                .pipe(Effect.catchAll(() => Effect.void)),
+            { discard: true },
+          );
+
         yield* Effect.all([
           rows.authConnections.upsert(nextConnection),
           rows.sourceAuthBindings.upsert(nextBinding),
@@ -250,23 +330,107 @@ export const createPmCredentialsService = (
               ),
             );
           const existingOAuth = Option.getOrNull(existingOAuthOption);
+          const existingMaterialOption = yield* rows.authMaterials
+            .getByConnectionId(requestedConnectionId)
+            .pipe(
+              Effect.mapError((error) =>
+                sourceStoreError.fromRowStore("credentials.materials.get_by_connection", error),
+              ),
+            );
+          const existingMaterial = Option.getOrNull(existingMaterialOption);
 
-          const refreshConfig = buildOAuthRefreshConfigFromPayload(
+          const refreshConfigBase = buildOAuthRefreshConfigFromPayload(
             input.payload,
             parseOAuthRefreshConfig(existingOAuth?.refreshConfigJson ?? null),
           );
+
+          const accessTokenHandle = yield* secretMaterialStore
+            .put({
+              value: input.payload.secret,
+              scope: toSecretScope({
+                organizationId,
+                workspaceId: scopeWorkspaceId,
+                accountId: scopeAccountId,
+                connectionId: requestedConnectionId,
+                purpose: "oauth_access_token",
+              }),
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                sourceStoreError.fromMessage(
+                  "credentials.upsert_oauth_access_token",
+                  error.message,
+                  error.details,
+                ),
+              ),
+            );
+
+          const refreshTokenHandle = input.payload.oauthRefreshToken !== undefined
+            ? (normalizeString(input.payload.oauthRefreshToken)
+              ? yield* secretMaterialStore
+                .put({
+                  value: normalizeString(input.payload.oauthRefreshToken)!,
+                  scope: toSecretScope({
+                    organizationId,
+                    workspaceId: scopeWorkspaceId,
+                    accountId: scopeAccountId,
+                    connectionId: requestedConnectionId,
+                    purpose: "oauth_refresh_token",
+                  }),
+                })
+                .pipe(
+                  Effect.mapError((error) =>
+                    sourceStoreError.fromMessage(
+                      "credentials.upsert_oauth_refresh_token",
+                      error.message,
+                      error.details,
+                    ),
+                  ),
+                )
+              : null)
+            : existingOAuth?.refreshTokenHandle ?? null;
+
+          const clientSecretHandle = input.payload.oauthClientSecret !== undefined
+            ? (normalizeString(input.payload.oauthClientSecret)
+              ? yield* secretMaterialStore
+                .put({
+                  value: normalizeString(input.payload.oauthClientSecret)!,
+                  scope: toSecretScope({
+                    organizationId,
+                    workspaceId: scopeWorkspaceId,
+                    accountId: scopeAccountId,
+                    connectionId: requestedConnectionId,
+                    purpose: "oauth_client_secret",
+                  }),
+                })
+                .pipe(
+                  Effect.mapError((error) =>
+                    sourceStoreError.fromMessage(
+                      "credentials.upsert_oauth_client_secret",
+                      error.message,
+                      error.details,
+                    ),
+                  ),
+                )
+              : null)
+            : parseOAuthRefreshConfig(existingOAuth?.refreshConfigJson ?? null).clientSecretHandle
+              ?? existingOAuth?.clientSecretHandle
+              ?? null;
+
+          const refreshConfig = {
+            ...refreshConfigBase,
+            clientSecretHandle: clientSecretHandle ?? undefined,
+          };
 
           const oauthState: OAuthState = {
             id:
               existingOAuth?.id
               ?? (`oauth_state_${crypto.randomUUID()}` as OAuthState["id"]),
             connectionId: requestedConnectionId,
-            accessTokenCiphertext: input.payload.secretRef,
-            refreshTokenCiphertext:
-              input.payload.oauthRefreshToken !== undefined
-                ? normalizeString(input.payload.oauthRefreshToken)
-                : existingOAuth?.refreshTokenCiphertext ?? null,
-            keyVersion: existingOAuth?.keyVersion ?? "local",
+            backend: secretMaterialStore.kind,
+            accessTokenHandle,
+            refreshTokenHandle,
+            clientSecretHandle,
             expiresAt:
               input.payload.oauthExpiresAt !== undefined
                 ? input.payload.oauthExpiresAt
@@ -301,6 +465,18 @@ export const createPmCredentialsService = (
               sourceStoreError.fromRowStore("credentials.upsert_oauth", error),
             ),
           );
+
+          yield* removeHandles([
+            existingMaterial?.materialHandle ?? null,
+            existingOAuth?.accessTokenHandle,
+            existingOAuth?.refreshTokenHandle,
+            existingOAuth?.clientSecretHandle,
+            parseOAuthRefreshConfig(existingOAuth?.refreshConfigJson ?? null).clientSecretHandle,
+          ].filter((handle) =>
+            handle !== accessTokenHandle
+            && handle !== refreshTokenHandle
+            && handle !== clientSecretHandle,
+          ));
         } else {
           const existingMaterialOption = yield* rows.authMaterials
             .getByConnectionId(requestedConnectionId)
@@ -310,14 +486,43 @@ export const createPmCredentialsService = (
               ),
             );
           const existingMaterial = Option.getOrNull(existingMaterialOption);
+          const existingOAuthOption = yield* rows.oauthStates
+            .getByConnectionId(requestedConnectionId)
+            .pipe(
+              Effect.mapError((error) =>
+                sourceStoreError.fromRowStore("credentials.oauth_states.get_by_connection", error),
+              ),
+            );
+          const existingOAuth = Option.getOrNull(existingOAuthOption);
+
+          const materialHandle = yield* secretMaterialStore
+            .put({
+              value: input.payload.secret,
+              scope: toSecretScope({
+                organizationId,
+                workspaceId: scopeWorkspaceId,
+                accountId: scopeAccountId,
+                connectionId: requestedConnectionId,
+                purpose: "auth_material",
+              }),
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                sourceStoreError.fromMessage(
+                  "credentials.upsert_secret",
+                  error.message,
+                  error.details,
+                ),
+              ),
+            );
 
           const material: AuthMaterial = {
             id:
               existingMaterial?.id
               ?? (`auth_material_${crypto.randomUUID()}` as AuthMaterial["id"]),
             connectionId: requestedConnectionId,
-            ciphertext: input.payload.secretRef,
-            keyVersion: existingMaterial?.keyVersion ?? "local",
+            backend: secretMaterialStore.kind,
+            materialHandle,
             createdAt: existingMaterial?.createdAt ?? now,
             updatedAt: now,
           };
@@ -330,9 +535,17 @@ export const createPmCredentialsService = (
               sourceStoreError.fromRowStore("credentials.upsert_secret", error),
             ),
           );
+
+          yield* removeHandles([
+            existingMaterial?.materialHandle,
+            existingOAuth?.accessTokenHandle,
+            existingOAuth?.refreshTokenHandle,
+            existingOAuth?.clientSecretHandle,
+            parseOAuthRefreshConfig(existingOAuth?.refreshConfigJson ?? null).clientSecretHandle,
+          ].filter((handle) => handle !== materialHandle));
         }
 
-        return toCompatSourceCredentialBinding(nextBinding, nextConnection);
+        return toCompatSourceCredentialBinding(nextBinding, nextConnection, true);
       }),
 
     removeCredentialBinding: (input) =>
@@ -396,6 +609,44 @@ export const createPmCredentialsService = (
         const hasRemainingBindings = remainingBindings.some((candidate) => candidate.id !== binding.id);
 
         if (!hasRemainingBindings) {
+          const [materialOption, oauthOption] = yield* Effect.all([
+            rows.authMaterials.getByConnectionId(binding.connectionId),
+            rows.oauthStates.getByConnectionId(binding.connectionId),
+          ]).pipe(
+            Effect.mapError((error) =>
+              sourceStoreError.fromRowStore("credentials.get_connection_material", error),
+            ),
+          );
+
+          const material = Option.getOrNull(materialOption);
+          const oauthState = Option.getOrNull(oauthOption);
+
+          const removeScope = toSecretScope({
+            organizationId: binding.organizationId,
+            workspaceId: binding.workspaceId,
+            accountId: binding.accountId,
+            connectionId: binding.connectionId,
+            purpose: "auth_material",
+          });
+
+          yield* Effect.forEach(
+            uniqueHandles([
+              material?.materialHandle,
+              oauthState?.accessTokenHandle,
+              oauthState?.refreshTokenHandle,
+              oauthState?.clientSecretHandle,
+              parseOAuthRefreshConfig(oauthState?.refreshConfigJson ?? null).clientSecretHandle,
+            ]),
+            (handle) =>
+              secretMaterialStore
+                .remove({
+                  handle,
+                  scope: removeScope,
+                })
+                .pipe(Effect.catchAll(() => Effect.void)),
+            { discard: true },
+          );
+
           yield* Effect.all([
             rows.authConnections.removeById(binding.connectionId),
             rows.authMaterials.removeByConnectionId(binding.connectionId),

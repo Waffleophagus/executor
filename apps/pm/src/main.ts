@@ -8,7 +8,8 @@ import {
   makeSourceManagerService,
 } from "@executor-v2/management-api";
 import {
-  RuntimeAdapterError,
+  RuntimeToolInvokerError,
+  createRuntimeToolCallHandler,
   makeGraphqlToolProvider,
   makeMcpToolProvider,
   createRunExecutor,
@@ -16,6 +17,7 @@ import {
   invokeRuntimeToolCallResult,
   makeOpenApiToolProvider,
   makeRuntimeAdapterRegistry,
+  sourceIdFromToolPath,
   makeToolProviderRegistry,
 } from "@executor-v2/engine";
 import {
@@ -41,6 +43,7 @@ import {
   createPmApprovalsService,
   createPmPersistentToolApprovalPolicy,
 } from "./approvals-service";
+import { createPmResolveToolCredentials } from "./credential-resolver";
 import { startPmHttpServer } from "./http-server";
 import { createPmPoliciesService } from "./policies-service";
 import { createPmCredentialsService } from "./credentials-service";
@@ -50,11 +53,12 @@ import { createPmToolsService } from "./tools-service";
 import { createPmWorkspacesService } from "./workspaces-service";
 import { createPmMcpHandler } from "./mcp-handler";
 import { createPmExecuteRuntimeRun } from "./runtime-execution-port";
+import {
+  createKeychainSecretMaterialStore,
+  createSqlSecretMaterialStore,
+} from "./secret-material-store";
 import { createPmToolCallHttpHandler } from "./tool-call-handler";
 import { readPmEnvironment } from "./env";
-
-const formatRuntimeAdapterError = (error: RuntimeAdapterError): string =>
-  error.details ? `${error.message}: ${error.details}` : error.message;
 
 const env = readPmEnvironment();
 const port = env.port;
@@ -151,6 +155,9 @@ const persistence: SqlControlPlanePersistence = await Effect.runPromise(
 
 const sourceStore = persistence.sourceStore;
 const toolArtifactStore = persistence.toolArtifactStore;
+const secretMaterialStore = env.secretMaterialBackend === "sql"
+  ? createSqlSecretMaterialStore(persistence.rows.secretMaterials)
+  : createKeychainSecretMaterialStore();
 
 await Effect.runPromise(ensurePmBootstrap(persistence));
 
@@ -187,7 +194,7 @@ const sourcesService = {
     }),
 };
 
-const credentialsService = createPmCredentialsService(persistence.rows);
+const credentialsService = createPmCredentialsService(persistence.rows, secretMaterialStore);
 const policiesService = createPmPoliciesService(persistence.rows);
 const organizationsService = createPmOrganizationsService(persistence.rows);
 const workspacesService = createPmWorkspacesService(persistence.rows);
@@ -239,18 +246,41 @@ const handleMcp = createPmMcpHandler(runExecutor.executeRun, {
   defaultToolExposureMode,
 });
 
-const handleToolCallHttp = createPmToolCallHttpHandler((input) =>
-  Effect.runPromise(
-    invokeRuntimeToolCallResult(toolRegistry, input).pipe(
-      Effect.catchTag("RuntimeAdapterError", (error) =>
-        Effect.succeed<RuntimeToolCallResult>({
-          ok: false,
-          kind: "failed",
-          error: formatRuntimeAdapterError(error),
-        }),
+const resolveCredentials = createPmResolveToolCredentials(
+  persistence.rows,
+  secretMaterialStore,
+);
+const handleRuntimeToolCall = createRuntimeToolCallHandler({
+  resolveCredentials,
+  invokeRuntimeTool: ({ request, credentials }) => {
+    const sourceId = sourceIdFromToolPath(request.toolPath);
+    const requestWithCredentialContext = request.credentialContext || !sourceId
+      ? request
+      : {
+        ...request,
+        credentialContext: {
+          workspaceId,
+          sourceKey: `source:${sourceId}`,
+        },
+      };
+
+    return invokeRuntimeToolCallResult(toolRegistry, {
+      ...requestWithCredentialContext,
+      credentialHeaders: credentials.headers,
+    }).pipe(
+      Effect.mapError(
+        (error) =>
+          new RuntimeToolInvokerError({
+            operation: "invoke_runtime_tool",
+            message: error.message,
+            details: error.details,
+          }),
       ),
-    ),
-  ),
+    );
+  },
+});
+const handleToolCallHttp = createPmToolCallHttpHandler((input): Promise<RuntimeToolCallResult> =>
+  Effect.runPromise(handleRuntimeToolCall(input))
 );
 
 const server = startPmHttpServer({
