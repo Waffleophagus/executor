@@ -140,19 +140,16 @@ const installMcpElicitationHandler = (input: {
   sourceKey: string;
   args: Record<string, unknown>;
   executionContext?: ToolExecutionContext;
-}): Effect.Effect<void, McpToolsError> =>
-  Effect.try({
-    try: () => {
-      if (!hasElicitationRequestHandler(input.client)) {
-        throw new McpToolsError({
-          stage: "call_tool",
-          message: `MCP client does not support elicitation callbacks for ${input.toolName}`,
-          details: null,
-        });
-      }
+}): Effect.Effect<void, McpToolsError> => {
+  const client = input.client;
+  if (!hasElicitationRequestHandler(client)) {
+    return Effect.succeed(undefined);
+  }
 
+  return Effect.try({
+    try: () => {
       let sequence = 0;
-      input.client.setRequestHandler(ElicitRequestSchema, (request) => {
+      client.setRequestHandler(ElicitRequestSchema, (request: { params: unknown }) => {
         sequence += 1;
 
         return Effect.runPromise(
@@ -197,6 +194,7 @@ const installMcpElicitationHandler = (input: {
             details: toDetails(cause),
           }),
   });
+};
 
 const resolveUrlElicitations = (input: {
   cause: {
