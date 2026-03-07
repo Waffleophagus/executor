@@ -9,6 +9,7 @@ import {
   NodeRuntime,
 } from "@effect/platform-node";
 import {
+  EXECUTOR_SOURCES_ADD_HELP_LINES,
   ExecutionIdSchema,
   RuntimeExecutionResolverService,
   createControlPlaneClient,
@@ -146,7 +147,8 @@ const buildWorkflowText = (namespaces: readonly string[] = []): string =>
     '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
     "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
     "3) Call selected tools.<path>(input).",
-    '4) To connect a new MCP source, call tools.executor.sources.add({ endpoint, name, namespace }).',
+    '4) To connect a source, call tools.executor.sources.add(...) for MCP or OpenAPI APIs.',
+    ...EXECUTOR_SOURCES_ADD_HELP_LINES,
     "5) If execution pauses for interaction, resume it with `executor resume --execution-id ...`.",
     "Do not use fetch; use tools.* only.",
   ].join("\n");
@@ -305,6 +307,7 @@ const printCallHelp = (workflow: string) =>
       '  executor call \'const matches = await tools.discover({ query: "github issues", limit: 5 }); return matches;\'',
       '  executor call \'const matches = await tools.discover({ query: "repo details", limit: 1 }); const path = matches.bestPath; return await tools.describe.tool({ path, includeSchemas: true });\'',
       '  executor call \'return await tools.executor.sources.add({ endpoint: "https://example.com/mcp", name: "Example", namespace: "example" });\'',
+      '  executor call \'return await tools.executor.sources.add({ kind: "openapi", endpoint: "https://api.github.com", specUrl: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json", name: "GitHub", namespace: "github", auth: { kind: "bearer" } });\'',
       "  cat script.ts | executor call --stdin",
       "  executor call --file script.ts",
       "  executor resume --execution-id exec_123",
@@ -389,6 +392,7 @@ const parseInteractionPayload = (interaction: ExecutionInteraction): {
   message: string;
   mode: "form" | "url";
   url?: string;
+  requestedSchema?: Record<string, unknown>;
 } | null => {
   try {
     const parsed = JSON.parse(interaction.payloadJson) as {
@@ -396,6 +400,7 @@ const parseInteractionPayload = (interaction: ExecutionInteraction): {
         message?: string;
         mode?: "form" | "url";
         url?: string;
+        requestedSchema?: Record<string, unknown>;
       };
     };
 
@@ -407,11 +412,157 @@ const parseInteractionPayload = (interaction: ExecutionInteraction): {
       message: parsed.elicitation.message,
       mode: parsed.elicitation.mode === "url" ? "url" : "form",
       url: parsed.elicitation.url,
+      requestedSchema:
+        typeof parsed.elicitation.requestedSchema === "object"
+        && parsed.elicitation.requestedSchema !== null
+        && !Array.isArray(parsed.elicitation.requestedSchema)
+          ? parsed.elicitation.requestedSchema
+          : undefined,
     };
   } catch {
     return null;
   }
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+type PromptField = {
+  name: string;
+  label: string;
+  description?: string;
+  type: string;
+  required: boolean;
+  enumValues?: readonly unknown[];
+};
+
+const getPromptFields = (requestedSchema: Record<string, unknown> | undefined): PromptField[] => {
+  if (!requestedSchema || !isRecord(requestedSchema.properties)) {
+    return [];
+  }
+
+  const required = new Set(
+    Array.isArray(requestedSchema.required)
+      ? requestedSchema.required.filter((value): value is string => typeof value === "string")
+      : [],
+  );
+
+  return Object.entries(requestedSchema.properties).flatMap(([name, property]) => {
+    if (!isRecord(property)) {
+      return [];
+    }
+
+    return [{
+      name,
+      label:
+        typeof property.title === "string" && property.title.trim().length > 0
+          ? property.title.trim()
+          : name,
+      description:
+        typeof property.description === "string" && property.description.trim().length > 0
+          ? property.description.trim()
+          : undefined,
+      type: typeof property.type === "string" ? property.type : "string",
+      required: required.has(name),
+      enumValues: Array.isArray(property.enum) ? property.enum : undefined,
+    }];
+  });
+};
+
+const parsePromptValue = (field: PromptField, raw: string):
+  | { ok: true; value: unknown }
+  | { ok: false; message: string } => {
+  if (field.enumValues && field.enumValues.length > 0) {
+    const normalized = field.enumValues.map((value) => String(value));
+    if (!normalized.includes(raw)) {
+      return {
+        ok: false,
+        message: `Enter one of: ${normalized.join(", ")}`,
+      };
+    }
+  }
+
+  if (field.type === "boolean") {
+    const normalized = raw.trim().toLowerCase();
+    if (["y", "yes", "true"].includes(normalized)) {
+      return { ok: true, value: true };
+    }
+    if (["n", "no", "false"].includes(normalized)) {
+      return { ok: true, value: false };
+    }
+    return { ok: false, message: "Enter yes or no" };
+  }
+
+  if (field.type === "number" || field.type === "integer") {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+      return { ok: false, message: "Enter a number" };
+    }
+    if (field.type === "integer" && !Number.isInteger(value)) {
+      return { ok: false, message: "Enter an integer" };
+    }
+    return { ok: true, value };
+  }
+
+  if (field.type === "object" || field.type === "array") {
+    try {
+      return { ok: true, value: JSON.parse(raw) };
+    } catch {
+      return { ok: false, message: "Enter valid JSON" };
+    }
+  }
+
+  return { ok: true, value: raw };
+};
+
+const promptStructuredInteraction = (parsed: {
+  message: string;
+  requestedSchema?: Record<string, unknown>;
+}) =>
+  Effect.gen(function* () {
+    const fields = getPromptFields(parsed.requestedSchema);
+    if (fields.length === 0) {
+      return null as Record<string, unknown> | null;
+    }
+
+    yield* Effect.sync(() => {
+      process.stdout.write(`${parsed.message}\n`);
+    });
+
+    const content: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (field.description) {
+        yield* Effect.sync(() => {
+          process.stdout.write(`${field.description}\n`);
+        });
+      }
+
+      while (true) {
+        const raw = yield* promptLine(
+          `${field.label}${field.required ? "" : " (optional)"}: `,
+        );
+        const trimmed = raw.trim();
+        if (trimmed.length === 0) {
+          if (field.required) {
+            return null;
+          }
+          break;
+        }
+
+        const parsedValue = parsePromptValue(field, trimmed);
+        if (parsedValue.ok) {
+          content[field.name] = parsedValue.value;
+          break;
+        }
+
+        yield* Effect.sync(() => {
+          process.stdout.write(`${parsedValue.message}\n`);
+        });
+      }
+    }
+
+    return content;
+  });
 
 const promptInteraction = (interaction: ExecutionInteraction) =>
   Effect.gen(function* () {
@@ -426,6 +577,14 @@ const promptInteraction = (interaction: ExecutionInteraction) =>
         process.stdout.write(`${parsed.message}\n${parsed.url ?? ""}\n`);
       });
       return null;
+    }
+
+    const structured = yield* promptStructuredInteraction(parsed);
+    if (structured !== null) {
+      return JSON.stringify({
+        action: "accept",
+        content: structured,
+      });
     }
 
     const line = yield* promptLine(`${parsed.message} [y/N] `);

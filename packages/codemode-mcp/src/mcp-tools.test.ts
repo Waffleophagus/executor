@@ -1,12 +1,19 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "@effect/vitest";
 import { assertInstanceOf, assertTrue } from "@effect/vitest/utils";
+import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
-import type { ToolDefinition, ToolInput, ToolMap } from "@executor-v3/codemode-core";
+import type {
+  ToolDefinition,
+  ToolInput,
+  ToolMap,
+  ToolPath,
+} from "@executor-v3/codemode-core";
 
 import { createSdkMcpConnector } from "./mcp-connection";
 import {
@@ -290,9 +297,74 @@ describe("codemode-mcp", () => {
         }),
       );
 
-      assertTrue(outcome._tag === "Left");
+      assertTrue(Either.isLeft(outcome));
       assertInstanceOf(outcome.left, McpToolsError);
       expect(outcome.left.stage).toBe("list_tools");
+    }),
+  );
+
+  it.effect("supports URL elicitation while discovering MCP tools", () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const elicitationMessages: Array<string> = [];
+
+      const discovered = yield* discoverMcpToolsFromConnector({
+        connect: async () => ({
+          client: {
+            listTools: async () => {
+              attempts += 1;
+
+              if (attempts === 1) {
+                throw new UrlElicitationRequiredError([
+                  {
+                    mode: "url",
+                    message: "Authorize tool discovery",
+                    url: "https://example.com/authorize-discovery",
+                    elicitationId: "discover-auth",
+                  },
+                ]);
+              }
+
+              return {
+                tools: [
+                  {
+                    name: "Echo",
+                    description: "Echo payload",
+                    inputSchema: {
+                      type: "object",
+                      properties: {
+                        value: { type: "string" },
+                      },
+                    },
+                  },
+                ],
+              };
+            },
+            callTool: async () => ({ ok: true }),
+          },
+          close: async () => undefined,
+        }),
+        namespace: "source.mcp",
+        sourceKey: "mcp.discovery",
+        mcpDiscoveryElicitation: {
+          onElicitation: ({ elicitation }) =>
+            Effect.sync(() => {
+              elicitationMessages.push(elicitation.message);
+              return {
+                action: "accept" as const,
+              };
+            }),
+          path: "executor.sources.add" as ToolPath,
+          sourceKey: "executor",
+          args: {
+            endpoint: "https://example.com/mcp",
+          },
+        },
+      });
+
+      expect(attempts).toBe(2);
+      expect(elicitationMessages).toEqual(["Authorize tool discovery"]);
+      expect(Object.keys(discovered.tools)).toEqual(["source.mcp.echo"]);
     }),
   );
 });

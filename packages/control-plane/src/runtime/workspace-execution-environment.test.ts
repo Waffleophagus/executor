@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  HttpApi,
+  HttpApiBuilder,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+  HttpServer,
+} from "@effect/platform";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -10,7 +19,12 @@ import {
   SourceIdSchema,
   WorkspaceIdSchema,
 } from "#schema";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
+import { Schema } from "effect";
 import { z } from "zod/v4";
 
 import {
@@ -19,7 +33,11 @@ import {
 } from "#persistence";
 import type { SourceId, WorkspaceId } from "#schema";
 
-import type { RuntimeSourceAuthService } from "./source-auth-service";
+import {
+  createRuntimeSourceAuthService,
+  type RuntimeSourceAuthService,
+} from "./source-auth-service";
+import { createLiveExecutionManager } from "./live-execution";
 import { createWorkspaceExecutionEnvironmentResolver } from "./workspace-execution-environment";
 
 type CountedMcpServer = {
@@ -30,6 +48,16 @@ type CountedMcpServer = {
   };
   close: () => Promise<void>;
 };
+
+type OpenApiSpecServer = {
+  baseUrl: string;
+  specUrl: string;
+  seenAuthHeaders: Array<string | null>;
+  close: () => Promise<void>;
+};
+
+const closeScope = (scope: Scope.CloseableScope) =>
+  Scope.close(scope, Exit.void).pipe(Effect.orDie);
 
 const makePersistence = Effect.acquireRelease(
   createSqlControlPlanePersistence({
@@ -249,6 +277,73 @@ const makeCountedMcpServer = Effect.acquireRelease(
     }).pipe(Effect.orDie),
 );
 
+const ownerParam = HttpApiSchema.param("owner", Schema.String);
+const repoParam = HttpApiSchema.param("repo", Schema.String);
+
+class GeneratedReposApi extends HttpApiGroup.make("repos")
+  .add(
+    HttpApiEndpoint.get("getRepo")`/repos/${ownerParam}/${repoParam}`
+      .addSuccess(
+        Schema.Struct({
+          ok: Schema.Boolean,
+          full_name: Schema.String,
+        }),
+      ),
+  ) {}
+
+class GeneratedApi extends HttpApi.make("generated").add(GeneratedReposApi) {}
+
+const makeOpenApiSpecServer = Effect.acquireRelease(
+  Effect.gen(function* () {
+    const seenAuthHeaders: OpenApiSpecServer["seenAuthHeaders"] = [];
+    const handlersLayer = HttpApiBuilder.group(GeneratedApi, "repos", (handlers) =>
+      handlers.handle("getRepo", ({ path, request }) =>
+        Effect.sync(() => {
+          seenAuthHeaders.push(
+            typeof request.headers.authorization === "string"
+              ? request.headers.authorization
+              : null,
+          );
+
+          return {
+            ok: true,
+            full_name: `${path.owner}/${path.repo}`,
+          };
+        })
+      )
+    );
+    const apiLayer = HttpApiBuilder.api(GeneratedApi).pipe(
+      Layer.provide(handlersLayer),
+    );
+    const serverLayer = HttpApiBuilder.serve().pipe(
+      Layer.provide(HttpApiBuilder.middlewareOpenApi()),
+      Layer.provide(apiLayer),
+      Layer.provideMerge(NodeHttpServer.layerTest),
+    );
+    const scope = yield* Scope.make();
+    const context = yield* Layer.buildWithScope(serverLayer, scope).pipe(
+      Effect.catchAll((error) =>
+        closeScope(scope).pipe(
+          Effect.zipRight(Effect.fail(error)),
+        )),
+    );
+    const server = Context.get(context, HttpServer.HttpServer);
+    const baseUrl = HttpServer.formatAddress(server.address);
+
+    return {
+      baseUrl,
+      specUrl: new URL("/openapi.json", baseUrl).toString(),
+      seenAuthHeaders,
+      close: () => Effect.runPromise(closeScope(scope)),
+    } satisfies OpenApiSpecServer;
+  }),
+  (server) =>
+    Effect.tryPromise({
+      try: () => server.close(),
+      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+    }).pipe(Effect.orDie),
+);
+
 const persistConnectedEchoTool = (input: {
   persistence: SqlControlPlanePersistence;
   endpoint: string;
@@ -323,9 +418,18 @@ const makeResolver = (persistence: SqlControlPlanePersistence) =>
     rows: persistence.rows,
     sourceAuthService: {
       getSourceById: () => Effect.fail(new Error("not implemented in test")),
-      addExecutorMcpSource: () => Effect.fail(new Error("not implemented in test")),
+      addExecutorSource: () => Effect.fail(new Error("not implemented in test")),
       completeSourceAuthCallback: () => Effect.fail(new Error("not implemented in test")),
     } as RuntimeSourceAuthService,
+  });
+
+const makeResolverWithLiveSourceAuth = (persistence: SqlControlPlanePersistence) =>
+  createWorkspaceExecutionEnvironmentResolver({
+    rows: persistence.rows,
+    sourceAuthService: createRuntimeSourceAuthService({
+      rows: persistence.rows,
+      liveExecutionManager: createLiveExecutionManager(),
+    }),
   });
 
 describe("workspace-execution-environment", () => {
@@ -405,6 +509,161 @@ describe("workspace-execution-environment", () => {
       expect(server.counts.listTools).toBe(0);
       expect(server.counts.callTool).toBe(1);
       expect(result.content?.[0]?.text).toBe("echo:hello");
+    }),
+  );
+
+  it.scoped("adds an OpenAPI source through executor.sources.add with elicited credentials", () =>
+    Effect.gen(function* () {
+      const specServer = yield* makeOpenApiSpecServer;
+      const persistence = yield* makePersistence;
+      const workspaceId = WorkspaceIdSchema.make("ws_add_openapi");
+      const resolveEnvironment = makeResolverWithLiveSourceAuth(persistence);
+      let capturedElicitation:
+        | {
+            mode?: string;
+            requestedSchema?: Record<string, unknown>;
+          }
+        | null = null;
+
+      const environment = yield* resolveEnvironment({
+        workspaceId,
+        accountId: AccountIdSchema.make("acc_add_openapi"),
+        executionId: ExecutionIdSchema.make("exec_add_openapi"),
+        onElicitation: (request) =>
+          Effect.sync(() => {
+            capturedElicitation = request.elicitation as {
+              mode?: string;
+              requestedSchema?: Record<string, unknown>;
+            };
+
+            return {
+              action: "accept" as const,
+              content: {
+                token: "ghp_test_token",
+              },
+            };
+          }),
+      });
+
+      const added = (yield* environment.toolInvoker.invoke({
+        path: "executor.sources.add",
+        args: {
+          kind: "openapi",
+          endpoint: specServer.baseUrl,
+          specUrl: specServer.specUrl,
+          name: "GitHub",
+          namespace: "github",
+          auth: {
+            kind: "bearer",
+          },
+        },
+        context: {
+          runId: "exec_add_openapi",
+        },
+      })) as {
+        kind: string;
+        status: string;
+        auth: {
+          kind: string;
+          token?: {
+            providerId: string;
+          };
+        };
+      };
+
+      expect(added.kind).toBe("openapi");
+      expect(added.status).toBe("connected");
+      expect(added.auth.kind).toBe("bearer");
+      expect(added.auth.token?.providerId).toBe("control-plane");
+      expect(capturedElicitation).toMatchObject({
+        mode: "form",
+        requestedSchema: {
+          type: "object",
+        },
+      });
+
+      const storedArtifacts = yield* persistence.rows.toolArtifacts.listByWorkspaceId(
+        workspaceId,
+      );
+      expect(storedArtifacts.length).toBeGreaterThan(0);
+      const repoToolPath = storedArtifacts[0]!.path;
+
+      const freshEnvironment = yield* resolveEnvironment({
+        workspaceId,
+        accountId: AccountIdSchema.make("acc_add_openapi_fresh"),
+        executionId: ExecutionIdSchema.make("exec_add_openapi_fresh"),
+      });
+
+      const discovered = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "discover",
+        args: {
+          query: "github repo",
+          limit: 5,
+        },
+      })) as {
+        bestPath: string | null;
+      };
+
+      expect(discovered.bestPath).toBe(repoToolPath);
+
+      const invoked = (yield* freshEnvironment.toolInvoker.invoke({
+        path: repoToolPath,
+        args: {
+          owner: "vercel",
+          repo: "ai",
+        },
+      })) as {
+        status: number;
+        body: {
+          ok: boolean;
+          full_name: string;
+        };
+      };
+
+      expect(invoked.status).toBe(200);
+      expect(invoked.body).toEqual({
+        ok: true,
+        full_name: "vercel/ai",
+      });
+      expect(specServer.seenAuthHeaders).toEqual(["Bearer ghp_test_token"]);
+    }),
+  );
+
+  it.scoped("describes executor.sources.add with derived type info and schemas", () =>
+    Effect.gen(function* () {
+      const persistence = yield* makePersistence;
+      const resolveEnvironment = makeResolverWithLiveSourceAuth(persistence);
+
+      const environment = yield* resolveEnvironment({
+        workspaceId: WorkspaceIdSchema.make("ws_describe_add_source"),
+        accountId: AccountIdSchema.make("acc_describe_add_source"),
+        executionId: ExecutionIdSchema.make("exec_describe_add_source"),
+      });
+
+      const described = (yield* environment.toolInvoker.invoke({
+        path: "describe.tool",
+        args: {
+          path: "executor.sources.add",
+          includeSchemas: true,
+        },
+      })) as {
+        path: string;
+        description?: string;
+        inputHint?: string;
+        inputSchemaJson?: string;
+      } | null;
+
+      expect(described?.path).toBe("executor.sources.add");
+      expect(described?.description).toContain("Source add input shapes:");
+      expect(described?.description).toContain("specUrl");
+      expect(described?.inputHint).toContain("endpoint");
+
+      const inputSchema = described?.inputSchemaJson
+        ? JSON.parse(described.inputSchemaJson) as Record<string, unknown>
+        : null;
+      expect(inputSchema).not.toBeNull();
+      expect(JSON.stringify(inputSchema)).toContain("specUrl");
+      expect(JSON.stringify(inputSchema)).toContain("endpoint");
     }),
   );
 });

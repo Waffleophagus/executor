@@ -1,11 +1,15 @@
 import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+} from "@effect/platform";
+import {
   createSdkMcpConnector,
   discoverMcpToolsFromConnector,
   type McpToolManifestEntry,
 } from "@executor-v3/codemode-mcp";
 import {
   extractOpenApiManifest,
-  fetchOpenApiDocument,
   type OpenApiExtractedTool,
 } from "@executor-v3/codemode-openapi";
 import type { SqlControlPlaneRows } from "#persistence";
@@ -224,6 +228,32 @@ export const resolveSourceAuthMaterial = (input: {
     } satisfies ResolvedSourceAuthMaterial;
   });
 
+const fetchOpenApiDocumentWithHeaders = (input: {
+  url: string;
+  headers?: Readonly<Record<string, string>>;
+}): Effect.Effect<string, Error, never> =>
+  Effect.gen(function* () {
+    const client = (yield* HttpClient.HttpClient).pipe(
+      HttpClient.filterStatusOk,
+    );
+    const request = HttpClientRequest.get(input.url).pipe(
+      HttpClientRequest.setHeaders(input.headers ?? {}),
+    );
+    const response = yield* client.execute(request).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+
+    return yield* response.text.pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+  }).pipe(
+    Effect.provide(FetchHttpClient.layer),
+  );
+
 const indexMcpSourceToolArtifacts = (input: {
   rows: SqlControlPlaneRows;
   source: Source;
@@ -293,6 +323,7 @@ const discoverAndIndexMcpSourceToolArtifacts = (input: {
 const indexOpenApiSourceToolArtifacts = (input: {
   rows: SqlControlPlaneRows;
   source: Source;
+  auth: ResolvedSourceAuthMaterial;
 }): Effect.Effect<void, Error, never> =>
   Effect.gen(function* () {
     if (!input.source.specUrl) {
@@ -301,15 +332,19 @@ const indexOpenApiSourceToolArtifacts = (input: {
       );
     }
 
-    const openApiDocument = yield* Effect.tryPromise({
-      try: () => fetchOpenApiDocument(input.source.specUrl!),
-      catch: (cause) =>
-        cause instanceof Error
-          ? new Error(
-              `Failed fetching OpenAPI spec for ${input.source.id}: ${cause.message}`,
-            )
-          : new Error(`Failed fetching OpenAPI spec for ${input.source.id}: ${String(cause)}`),
-    });
+    const openApiDocument = yield* fetchOpenApiDocumentWithHeaders({
+      url: input.source.specUrl,
+      headers: {
+        ...(input.source.defaultHeaders ?? {}),
+        ...input.auth.headers,
+      },
+    }).pipe(
+      Effect.mapError((cause) =>
+        new Error(
+          `Failed fetching OpenAPI spec for ${input.source.id}: ${cause.message}`,
+        ),
+      ),
+    );
 
     const manifest = yield* extractOpenApiManifest(
       input.source.name,
@@ -376,6 +411,7 @@ export const syncSourceToolArtifacts = (input: {
       return yield* indexOpenApiSourceToolArtifacts({
         rows: input.rows,
         source: input.source,
+        auth,
       });
     }
 

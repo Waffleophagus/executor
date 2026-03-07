@@ -1,5 +1,6 @@
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import * as Data from "effect/Data";
+import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
 import * as PartitionedSemaphore from "effect/PartitionedSemaphore";
 
@@ -8,8 +9,10 @@ import {
   toTool,
   type ElicitationRequest,
   type ElicitationResponse,
+  type ToolInvocationContext,
   type ToolExecutionContext,
   type ToolMap,
+  type ToolMetadata,
   type ToolPath,
   unknownInputSchema,
 } from "@executor-v3/codemode-core";
@@ -46,6 +49,15 @@ export type McpConnection = {
 };
 
 export type McpConnector = () => Promise<McpConnection>;
+
+export type McpDiscoveryElicitationContext = {
+  onElicitation: NonNullable<ToolExecutionContext["onElicitation"]>;
+  path: ToolPath;
+  sourceKey: string;
+  args: Record<string, unknown>;
+  metadata?: ToolMetadata;
+  invocation?: ToolInvocationContext;
+};
 
 type McpDiscoveryStage = "connect" | "list_tools" | "call_tool";
 
@@ -252,6 +264,79 @@ const callMcpTool = (input: {
     catch: (cause) => cause,
   });
 
+const toToolExecutionContext = (
+  input: McpDiscoveryElicitationContext | undefined,
+): ToolExecutionContext | undefined =>
+  input
+    ? {
+        path: input.path,
+        sourceKey: input.sourceKey,
+        metadata: input.metadata,
+        invocation: input.invocation,
+        onElicitation: input.onElicitation,
+      }
+    : undefined;
+
+const runMcpListToolsEffect = (input: {
+  connection: McpConnection;
+  mcpDiscoveryElicitation?: McpDiscoveryElicitationContext;
+}): Effect.Effect<unknown, McpToolsError> =>
+  Effect.gen(function* () {
+    const executionContext = toToolExecutionContext(input.mcpDiscoveryElicitation);
+
+    if (input.mcpDiscoveryElicitation) {
+      yield* installMcpElicitationHandler({
+        client: input.connection.client,
+        toolName: "tools/list",
+        onElicitation: input.mcpDiscoveryElicitation.onElicitation,
+        path: input.mcpDiscoveryElicitation.path,
+        sourceKey: input.mcpDiscoveryElicitation.sourceKey,
+        args: input.mcpDiscoveryElicitation.args,
+        executionContext,
+      });
+    }
+
+    let retries = 0;
+    while (true) {
+      const attempt = yield* Effect.either(
+        Effect.tryPromise({
+          try: () => input.connection.client.listTools(),
+          catch: (cause) => cause,
+        }),
+      );
+
+      if (Either.isRight(attempt)) {
+        return attempt.right;
+      }
+
+      if (
+        input.mcpDiscoveryElicitation
+        && isUrlElicitationRequiredError(attempt.left)
+        && retries < 2
+      ) {
+        yield* resolveUrlElicitations({
+          cause: attempt.left,
+          toolName: "tools/list",
+          onElicitation: input.mcpDiscoveryElicitation.onElicitation,
+          path: input.mcpDiscoveryElicitation.path,
+          sourceKey: input.mcpDiscoveryElicitation.sourceKey,
+          args: input.mcpDiscoveryElicitation.args,
+          executionContext,
+        });
+        retries += 1;
+        continue;
+      }
+
+      return yield* Effect.fail(
+        new McpToolsError({
+          stage: "list_tools",
+          message: "Failed listing MCP tools",
+          details: toDetails(attempt.left),
+        }),
+      );
+    }
+  });
+
 const runMcpToolCallEffect = (input: {
   connection: McpConnection;
   toolName: string;
@@ -284,7 +369,7 @@ const runMcpToolCallEffect = (input: {
         }),
       );
 
-      if (attempt._tag === "Right") {
+      if (Either.isRight(attempt)) {
         return attempt.right;
       }
 
@@ -385,6 +470,7 @@ export const discoverMcpToolsFromConnector = (input: {
   connect: McpConnector;
   namespace?: string;
   sourceKey?: string;
+  mcpDiscoveryElicitation?: McpDiscoveryElicitationContext;
 }): Effect.Effect<{ manifest: McpToolManifest; tools: ToolMap }, McpToolsError> =>
   Effect.gen(function* () {
     const listed = yield* withConnectionEffect({
@@ -395,16 +481,16 @@ export const discoverMcpToolsFromConnector = (input: {
           message: "Failed connecting to MCP server",
           details: toDetails(cause),
         }),
-      run: (connection) =>
-        Effect.tryPromise({
-          try: () => connection.client.listTools(),
-          catch: (cause) =>
-            new McpToolsError({
-              stage: "list_tools",
-              message: "Failed listing MCP tools",
-              details: toDetails(cause),
-            }),
-        }),
+      run: (connection) => {
+        const listEffect = runMcpListToolsEffect({
+          connection,
+          mcpDiscoveryElicitation: input.mcpDiscoveryElicitation,
+        });
+
+        return input.mcpDiscoveryElicitation
+          ? withElicitationClientLock(connection.client, listEffect)
+          : listEffect;
+      },
     });
 
     const manifest = extractMcpToolManifestFromListToolsResult(listed);

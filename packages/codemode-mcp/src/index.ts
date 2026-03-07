@@ -13,6 +13,7 @@ export {
   type McpClientLike,
   type McpConnection,
   type McpConnector,
+  type McpDiscoveryElicitationContext,
   type McpToolManifest,
   type McpToolManifestEntry,
 } from "./mcp-tools";

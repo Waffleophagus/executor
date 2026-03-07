@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as JSONSchema from "effect/JSONSchema";
 
 import type {
   ElicitationRequest,
@@ -340,6 +341,14 @@ const stringifySchema = (value: unknown): string | undefined => {
   }
 
   try {
+    if (
+      (typeof value === "object" || typeof value === "function")
+      && value !== null
+      && "~standard" in value
+    ) {
+      return JSON.stringify(JSONSchema.make(value as any));
+    }
+
     return JSON.stringify(value);
   } catch {
     return undefined;

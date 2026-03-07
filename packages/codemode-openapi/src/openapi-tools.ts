@@ -1,5 +1,11 @@
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+} from "@effect/platform";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import {
   standardSchemaFromJsonSchema,
@@ -195,13 +201,30 @@ const normalizeHttpUrl = (value: string): string => {
   }
 };
 
-const decodeFetchResponseBody = async (response: Response): Promise<unknown> => {
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+const decodeHttpClientResponseBody = (
+  response: Awaited<ReturnType<HttpClient.HttpClient["execute"]>> extends Effect.Effect<
+    infer A,
+    infer _E,
+    infer _R
+  >
+    ? A
+    : never,
+): Effect.Effect<unknown, Error, never> => {
+  const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
+
   if (contentType.includes("application/json")) {
-    return response.json();
+    return response.json.pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
   }
 
-  return response.text();
+  return response.text.pipe(
+    Effect.mapError((cause) =>
+      cause instanceof Error ? cause : new Error(String(cause)),
+    ),
+  );
 };
 
 const inputSchemaFromTypingJson = (inputSchemaJson: string | undefined) => {
@@ -227,6 +250,28 @@ type CreateOpenApiToolsFromManifestInput = {
   sourceKey?: string;
   defaultHeaders?: Readonly<Record<string, string>>;
   credentialHeaders?: Readonly<Record<string, string>>;
+  httpClientLayer?: Layer.Layer<HttpClient.HttpClient, never, never>;
+};
+
+const resolveRequestUrl = (baseUrl: string, resolvedPath: string): URL => {
+  try {
+    return new URL(resolvedPath);
+  } catch {
+    const base = new URL(baseUrl);
+    const basePath =
+      base.pathname === "/"
+        ? ""
+        : base.pathname.endsWith("/")
+          ? base.pathname.slice(0, -1)
+          : base.pathname;
+    const pathPart = resolvedPath.startsWith("/") ? resolvedPath : `/${resolvedPath}`;
+
+    base.pathname = `${basePath}${pathPart}`.replace(/\/{2,}/g, "/");
+    base.search = "";
+    base.hash = "";
+
+    return base;
+  }
 };
 
 const buildFetchRequest = (input: {
@@ -237,16 +282,20 @@ const buildFetchRequest = (input: {
   credentialHeaders: Readonly<Record<string, string>>;
 }): {
   url: URL;
-  init: RequestInit;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
 } => {
   const resolvedPath = replacePathTemplate(
     input.payload.pathTemplate,
     input.args,
     input.payload,
   );
-  const url = new URL(resolvedPath, input.baseUrl);
+  const url = resolveRequestUrl(input.baseUrl, resolvedPath);
 
-  const headers = new Headers(input.defaultHeaders);
+  const headers: Record<string, string> = {
+    ...input.defaultHeaders,
+  };
   const cookieParts: Array<string> = [];
 
   for (const parameter of input.payload.parameters) {
@@ -271,14 +320,14 @@ const buildFetchRequest = (input: {
     if (parameter.location === "query") {
       url.searchParams.set(parameter.name, encoded);
     } else if (parameter.location === "header") {
-      headers.set(parameter.name, encoded);
+      headers[parameter.name] = encoded;
     } else if (parameter.location === "cookie") {
       cookieParts.push(`${parameter.name}=${encodeURIComponent(encoded)}`);
     }
   }
 
   if (cookieParts.length > 0) {
-    headers.set("cookie", cookieParts.join("; "));
+    headers.cookie = cookieParts.join("; ");
   }
 
   let body: string | undefined;
@@ -297,24 +346,22 @@ const buildFetchRequest = (input: {
 
       const preferredContentType = input.payload.requestBody.contentTypes[0];
       if (preferredContentType) {
-        headers.set("content-type", preferredContentType);
-      } else if (!headers.has("content-type")) {
-        headers.set("content-type", "application/json");
+        headers["content-type"] = preferredContentType;
+      } else if (!("content-type" in headers)) {
+        headers["content-type"] = "application/json";
       }
     }
   }
 
   for (const [key, value] of Object.entries(input.credentialHeaders)) {
-    headers.set(key, value);
+    headers[key] = value;
   }
 
   return {
     url,
-    init: {
-      method: input.payload.method.toUpperCase(),
-      headers,
-      body,
-    },
+    method: input.payload.method.toUpperCase(),
+    headers,
+    body,
   };
 };
 
@@ -326,6 +373,7 @@ export const createOpenApiToolsFromManifest = (
   const namespace = input.namespace;
   const defaultHeaders = input.defaultHeaders ?? {};
   const credentialHeaders = input.credentialHeaders ?? {};
+  const httpClientLayer = input.httpClientLayer ?? FetchHttpClient.layer;
 
   const result: ToolMap = {};
 
@@ -349,14 +397,39 @@ export const createOpenApiToolsFromManifest = (
             credentialHeaders,
           });
 
-          const response = await fetch(request.url, request.init);
-          const body = await decodeFetchResponseBody(response);
+          return Effect.runPromise(
+            Effect.gen(function* () {
+              const client = yield* HttpClient.HttpClient;
+              let clientRequest = HttpClientRequest.make(
+                request.method as Parameters<typeof HttpClientRequest.make>[0],
+              )(request.url, {
+                headers: request.headers,
+              });
 
-          return {
-            status: response.status,
-            headers: Object.fromEntries(response.headers.entries()),
-            body,
-          };
+              if (request.body !== undefined) {
+                clientRequest = HttpClientRequest.bodyText(
+                  clientRequest,
+                  request.body,
+                  request.headers["content-type"],
+                );
+              }
+
+              const response = yield* client.execute(clientRequest).pipe(
+                Effect.mapError((cause) =>
+                  cause instanceof Error ? cause : new Error(String(cause)),
+                ),
+              );
+              const body = yield* decodeHttpClientResponseBody(response);
+
+              return {
+                status: response.status,
+                headers: { ...response.headers },
+                body,
+              };
+            }).pipe(
+              Effect.provide(httpClientLayer),
+            ),
+          );
         },
       },
       metadata: {
@@ -379,6 +452,7 @@ export const createOpenApiToolsFromSpec = (input: {
   sourceKey?: string;
   defaultHeaders?: Readonly<Record<string, string>>;
   credentialHeaders?: Readonly<Record<string, string>>;
+  httpClientLayer?: Layer.Layer<HttpClient.HttpClient, never, never>;
 }): Effect.Effect<
   { manifest: OpenApiToolManifest; tools: ToolMap },
   OpenApiExtractionError
@@ -394,5 +468,6 @@ export const createOpenApiToolsFromSpec = (input: {
       sourceKey: input.sourceKey,
       defaultHeaders: input.defaultHeaders,
       credentialHeaders: input.credentialHeaders,
+      httpClientLayer: input.httpClientLayer,
     }),
   }));

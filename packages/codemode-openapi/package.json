@@ -14,12 +14,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@effect/platform": "catalog:",
     "@executor-v3/codemode-core": "workspace:*",
     "effect": "catalog:",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@effect/platform": "catalog:",
     "@effect/platform-node": "^0.104.1",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
