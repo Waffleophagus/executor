@@ -1,5 +1,6 @@
-import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
 import { LocalInstallationSchema } from "#schema";
+import * as Schema from "effect/Schema";
 
 import {
   ControlPlaneBadRequestError,
@@ -7,11 +8,111 @@ import {
   ControlPlaneStorageError,
 } from "../errors";
 
+export const SecretProviderSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  canStore: Schema.Boolean,
+});
+
+export const InstanceConfigSchema = Schema.Struct({
+  platform: Schema.String,
+  secretProviders: Schema.Array(SecretProviderSchema),
+  defaultSecretStoreProvider: Schema.String,
+});
+
+export type SecretProvider = typeof SecretProviderSchema.Type;
+export type InstanceConfig = typeof InstanceConfigSchema.Type;
+
+// -- Secrets CRUD schemas ---------------------------------------------------
+
+export const SecretListItemSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  purpose: Schema.String,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+export type SecretListItem = typeof SecretListItemSchema.Type;
+
+export const CreateSecretPayloadSchema = Schema.Struct({
+  name: Schema.String,
+  value: Schema.String,
+});
+
+export type CreateSecretPayload = typeof CreateSecretPayloadSchema.Type;
+
+export const CreateSecretResultSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  providerId: Schema.String,
+  purpose: Schema.String,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+export type CreateSecretResult = typeof CreateSecretResultSchema.Type;
+
+export const UpdateSecretPayloadSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  value: Schema.optional(Schema.String),
+});
+
+export type UpdateSecretPayload = typeof UpdateSecretPayloadSchema.Type;
+
+export const UpdateSecretResultSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  purpose: Schema.String,
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+});
+
+export type UpdateSecretResult = typeof UpdateSecretResultSchema.Type;
+
+export const DeleteSecretResultSchema = Schema.Struct({
+  removed: Schema.Boolean,
+});
+
+export type DeleteSecretResult = typeof DeleteSecretResultSchema.Type;
+
+// -- API group --------------------------------------------------------------
+
 export class LocalApi extends HttpApiGroup.make("local")
   .add(
     HttpApiEndpoint.get("installation")`/local/installation`
       .addSuccess(LocalInstallationSchema)
       .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("config")`/local/config`
+      .addSuccess(InstanceConfigSchema),
+  )
+  .add(
+    HttpApiEndpoint.get("listSecrets")`/local/secrets`
+      .addSuccess(Schema.Array(SecretListItemSchema))
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("createSecret")`/local/secrets`
+      .setPayload(CreateSecretPayloadSchema)
+      .addSuccess(CreateSecretResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.patch("updateSecret")`/local/secrets/${HttpApiSchema.param("secretId", Schema.String)}`
+      .setPayload(UpdateSecretPayloadSchema)
+      .addSuccess(UpdateSecretResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.del("deleteSecret")`/local/secrets/${HttpApiSchema.param("secretId", Schema.String)}`
+      .addSuccess(DeleteSecretResultSchema)
       .addError(ControlPlaneNotFoundError)
       .addError(ControlPlaneStorageError),
   )

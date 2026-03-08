@@ -38,7 +38,17 @@ export {
   type ResumeExecutionPayload,
 } from "./executions/api";
 
-export { LocalApi } from "./local/api";
+export {
+  LocalApi,
+  type SecretProvider,
+  type InstanceConfig,
+  type SecretListItem,
+  type CreateSecretPayload,
+  type CreateSecretResult,
+  type UpdateSecretPayload,
+  type UpdateSecretResult,
+  type DeleteSecretResult,
+} from "./local/api";
 
 export {
   CreateOrganizationPayloadSchema,
@@ -62,8 +72,12 @@ export {
 } from "./workspaces/api";
 
 export {
+  ConnectMcpSourcePayloadSchema,
+  ConnectMcpSourceResultSchema,
   CreateSourcePayloadSchema,
   UpdateSourcePayloadSchema,
+  type ConnectMcpSourcePayload,
+  type ConnectMcpSourceResult,
   type CreateSourcePayload,
   type UpdateSourcePayload,
 } from "./sources/api";
