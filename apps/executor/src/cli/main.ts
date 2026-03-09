@@ -22,7 +22,7 @@ import {
   type SqlControlPlaneRuntime,
 } from "@executor-v3/control-plane";
 import type { ToolCatalog } from "@executor-v3/codemode-core";
-import { isDenoAvailable } from "@executor-v3/runtime-deno-subprocess";
+
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
@@ -1188,27 +1188,11 @@ const getDenoVersion = (): Effect.Effect<string | null, never, never> =>
     catch: () => null,
   }).pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-const installDeno = (): Effect.Effect<boolean, Error, never> =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<boolean>((resolve, reject) => {
-        const child = spawn("sh", ["-c", "curl -fsSL https://deno.land/install.sh | sh"], {
-          stdio: ["ignore", "inherit", "inherit"],
-        });
-
-        child.once("error", (err) => reject(err));
-        child.once("close", (code) => resolve(code === 0));
-      }),
-    catch: toError,
-  });
-
 const sandboxCommand = Command.make(
   "sandbox",
   {},
   () =>
     Effect.gen(function* () {
-      yield* printText("Checking Deno sandbox runtime...");
-
       const version = yield* getDenoVersion();
 
       if (version !== null) {
@@ -1216,29 +1200,22 @@ const sandboxCommand = Command.make(
         return;
       }
 
-      if (!isDenoAvailable()) {
-        yield* printText("Deno is not installed. Installing...");
-      } else {
-        yield* printText("Deno binary found but did not respond. Reinstalling...");
-      }
+      yield* printText(
+        [
+          "Deno is not installed.",
+          "",
+          "The executor sandbox requires Deno to run code in a secure, isolated subprocess.",
+          "",
+          "Install Deno:",
+          "  curl -fsSL https://deno.land/install.sh | sh",
+          "",
+          "Or see: https://docs.deno.com/runtime/getting_started/installation/",
+        ].join("\n"),
+      );
 
-      const installed = yield* installDeno();
-      if (!installed) {
-        return yield* Effect.fail(
-          new Error("Deno installation failed. Install manually: https://docs.deno.com/runtime/getting_started/installation/"),
-        );
-      }
-
-      const postVersion = yield* getDenoVersion();
-      if (postVersion === null) {
-        return yield* Effect.fail(
-          new Error("Deno was installed but could not be verified. You may need to restart your shell."),
-        );
-      }
-
-      yield* printText(`Deno sandbox installed successfully (deno ${postVersion}).`);
+      process.exitCode = 1;
     }),
-).pipe(Command.withDescription("Check and install the Deno sandbox runtime"));
+).pipe(Command.withDescription("Check whether the Deno sandbox runtime is available"));
 
 
 const callCommand = Command.make(
