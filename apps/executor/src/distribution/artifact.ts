@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 
 import { readDistributionPackageMetadata, repoRoot } from "./metadata";
 
@@ -72,20 +73,11 @@ const runCommand = async (input: CommandInput): Promise<void> => {
 };
 
 const resolvePGliteDistDir = (): string => {
-  const bunDir = join(repoRoot, "node_modules/.bun");
-  const packageDir = readdirSync(bunDir).find((entry) =>
-    entry.startsWith("@electric-sql+pglite@"),
+  const requireFromControlPlane = createRequire(
+    join(repoRoot, "packages/control-plane/package.json"),
   );
-
-  if (!packageDir) {
-    throw new Error(`Unable to locate PGlite package under ${bunDir}`);
-  }
-
-  const distDir = join(
-    bunDir,
-    packageDir,
-    "node_modules/@electric-sql/pglite/dist",
-  );
+  const entryPath = requireFromControlPlane.resolve("@electric-sql/pglite");
+  const distDir = dirname(entryPath);
 
   if (!existsSync(distDir)) {
     throw new Error(`Unable to locate PGlite dist directory at ${distDir}`);
