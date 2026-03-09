@@ -4,7 +4,7 @@ import type { Source } from "#schema";
 
 import {
   createTerminalSourceAuthSessionPatch,
-  shouldPromptForOpenApiCredentialSetup,
+  shouldPromptForHttpCredentialSetup,
 } from "./source-auth-service";
 
 const makeExistingOpenApiSource = (auth: Source["auth"]): Source => ({
@@ -81,9 +81,9 @@ describe("source-auth-service", () => {
     });
   });
 
-  it("reuses existing non-none OpenAPI auth without prompting again", () => {
+  it("reuses existing non-none HTTP source auth without prompting again", () => {
     expect(
-      shouldPromptForOpenApiCredentialSetup({
+      shouldPromptForHttpCredentialSetup({
         existing: makeExistingOpenApiSource({
           kind: "bearer",
           headerName: "Authorization",
@@ -97,7 +97,7 @@ describe("source-auth-service", () => {
     ).toBe(false);
 
     expect(
-      shouldPromptForOpenApiCredentialSetup({
+      shouldPromptForHttpCredentialSetup({
         existing: makeExistingOpenApiSource({
           kind: "oauth2",
           headerName: "Authorization",
@@ -115,11 +115,29 @@ describe("source-auth-service", () => {
     ).toBe(false);
 
     expect(
-      shouldPromptForOpenApiCredentialSetup({
+      shouldPromptForHttpCredentialSetup({
         existing: makeExistingOpenApiSource({
           kind: "none",
         }),
       }),
     ).toBe(true);
+
+    expect(
+      shouldPromptForHttpCredentialSetup({
+        existing: {
+          ...makeExistingOpenApiSource({
+            kind: "bearer",
+            headerName: "Authorization",
+            prefix: "Bearer ",
+            token: {
+              providerId: "postgres",
+              handle: "sec_graphql",
+            },
+          }),
+          kind: "graphql",
+          specUrl: null,
+        },
+      }),
+    ).toBe(false);
   });
 });

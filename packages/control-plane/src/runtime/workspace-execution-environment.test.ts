@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 
 import {
   HttpApi,
@@ -13,6 +14,18 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { describe, expect, it } from "@effect/vitest";
+import {
+  graphql,
+  GraphQLBoolean,
+  GraphQLID,
+  GraphQLInputObjectType,
+  GraphQLInt,
+  GraphQLList,
+  GraphQLNonNull,
+  GraphQLObjectType,
+  GraphQLSchema,
+  GraphQLString,
+} from "graphql";
 import {
   AccountIdSchema,
   CredentialIdSchema,
@@ -58,6 +71,202 @@ type OpenApiSpecServer = {
   seenAuthHeaders: Array<string | null>;
   close: () => Promise<void>;
 };
+
+type GraphqlServer = {
+  endpoint: string;
+  seenAuthHeaders: Array<string | null>;
+  close: () => Promise<void>;
+};
+
+const GraphqlUserType = new GraphQLObjectType({
+  name: "User",
+  fields: {
+    id: {
+      type: new GraphQLNonNull(GraphQLID),
+    },
+    name: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+  },
+});
+
+const GraphqlTeamType = new GraphQLObjectType({
+  name: "Team",
+  fields: {
+    id: {
+      type: new GraphQLNonNull(GraphQLID),
+    },
+    key: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+    name: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+  },
+});
+
+const GraphqlIssueType = new GraphQLObjectType({
+  name: "Issue",
+  fields: {
+    id: {
+      type: new GraphQLNonNull(GraphQLID),
+    },
+    identifier: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+    title: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+    team: {
+      type: new GraphQLNonNull(GraphqlTeamType),
+    },
+  },
+});
+
+const GraphqlPageInfoType = new GraphQLObjectType({
+  name: "PageInfo",
+  fields: {
+    hasNextPage: {
+      type: new GraphQLNonNull(GraphQLBoolean),
+    },
+    endCursor: {
+      type: GraphQLString,
+    },
+  },
+});
+
+const GraphqlIssueConnectionType = new GraphQLObjectType({
+  name: "IssueConnection",
+  fields: {
+    nodes: {
+      type: new GraphQLNonNull(
+        new GraphQLList(new GraphQLNonNull(GraphqlIssueType)),
+      ),
+    },
+    pageInfo: {
+      type: new GraphQLNonNull(GraphqlPageInfoType),
+    },
+  },
+});
+
+const GraphqlCreateIssueInputType = new GraphQLInputObjectType({
+  name: "CreateIssueInput",
+  fields: {
+    title: {
+      type: new GraphQLNonNull(GraphQLString),
+    },
+    teamId: {
+      type: GraphQLID,
+    },
+  },
+});
+
+const GraphqlQueryType = new GraphQLObjectType({
+  name: "Query",
+  fields: {
+    viewer: {
+      type: new GraphQLNonNull(GraphqlUserType),
+      description: "The current user",
+      resolve: () => ({
+        id: "usr_123",
+        name: "Rhys",
+      }),
+    },
+    issue: {
+      type: GraphqlIssueType,
+      description: "Find a single issue by id",
+      args: {
+        id: {
+          type: new GraphQLNonNull(GraphQLID),
+        },
+      },
+      resolve: (_source, args: { id: string }) => ({
+        id: args.id,
+        identifier: "ENG-123",
+        title: "Investigate GraphQL support",
+        team: {
+          id: "team_eng",
+          key: "ENG",
+          name: "Engineering",
+        },
+      }),
+    },
+    issues: {
+      type: new GraphQLNonNull(GraphqlIssueConnectionType),
+      description: "List issues for the workspace",
+      args: {
+        first: {
+          type: GraphQLInt,
+        },
+        query: {
+          type: GraphQLString,
+        },
+      },
+      resolve: () => ({
+        nodes: [
+          {
+            id: "iss_1",
+            identifier: "ENG-123",
+            title: "Investigate GraphQL support",
+            team: {
+              id: "team_eng",
+              key: "ENG",
+              name: "Engineering",
+            },
+          },
+          {
+            id: "iss_2",
+            identifier: "ENG-124",
+            title: "Ship GraphQL field tools",
+            team: {
+              id: "team_eng",
+              key: "ENG",
+              name: "Engineering",
+            },
+          },
+        ],
+        pageInfo: {
+          hasNextPage: false,
+          endCursor: "iss_2",
+        },
+      }),
+    },
+  },
+});
+
+const GraphqlMutationType = new GraphQLObjectType({
+  name: "Mutation",
+  fields: {
+    noop: {
+      type: GraphQLString,
+      resolve: () => "ok",
+    },
+    createIssue: {
+      type: new GraphQLNonNull(GraphqlIssueType),
+      description: "Create a new issue",
+      args: {
+        input: {
+          type: new GraphQLNonNull(GraphqlCreateIssueInputType),
+        },
+      },
+      resolve: (_source, args: { input: { title: string; teamId?: string | null } }) => ({
+        id: "iss_created",
+        identifier: "ENG-999",
+        title: args.input.title,
+        team: {
+          id: args.input.teamId ?? "team_eng",
+          key: "ENG",
+          name: "Engineering",
+        },
+      }),
+    },
+  },
+});
+
+const testGraphqlSchema = new GraphQLSchema({
+  query: GraphqlQueryType,
+  mutation: GraphqlMutationType,
+});
 
 const closeScope = (scope: Scope.CloseableScope) =>
   Scope.close(scope, Exit.void).pipe(Effect.orDie);
@@ -344,6 +553,82 @@ const makeOpenApiSpecServer = Effect.acquireRelease(
     Effect.tryPromise({
       try: () => server.close(),
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+  }).pipe(Effect.orDie),
+);
+
+const makeGraphqlServer = Effect.acquireRelease(
+  Effect.promise<GraphqlServer>(
+    () =>
+      new Promise<GraphqlServer>((resolve, reject) => {
+        const seenAuthHeaders: Array<string | null> = [];
+        const server = createServer(async (request, response) => {
+          if (request.method !== "POST") {
+            response.statusCode = 405;
+            response.end();
+            return;
+          }
+
+          const chunks: Array<Buffer> = [];
+          for await (const chunk of request) {
+            chunks.push(Buffer.from(chunk));
+          }
+
+          const rawBody = Buffer.concat(chunks).toString("utf8");
+          const parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
+          seenAuthHeaders.push(
+            typeof request.headers.authorization === "string"
+              ? request.headers.authorization
+              : null,
+          );
+          response.statusCode = 200;
+          response.setHeader("content-type", "application/json");
+
+          const result = await graphql({
+            schema: testGraphqlSchema,
+            source: typeof parsedBody.query === "string" ? parsedBody.query : "",
+            variableValues:
+              parsedBody.variables && typeof parsedBody.variables === "object"
+                ? (parsedBody.variables as Record<string, unknown>)
+                : undefined,
+            operationName:
+              typeof parsedBody.operationName === "string"
+                ? parsedBody.operationName
+                : undefined,
+          });
+
+          response.end(JSON.stringify(result));
+        });
+
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          const address = server.address();
+          if (!address || typeof address === "string") {
+            reject(new Error("Failed to resolve GraphQL test server address"));
+            return;
+          }
+
+          resolve({
+            endpoint: `http://127.0.0.1:${address.port}/graphql`,
+            seenAuthHeaders,
+            close: () =>
+              new Promise<void>((closeResolve, closeReject) => {
+                server.close((error) => {
+                  if (error) {
+                    closeReject(error);
+                    return;
+                  }
+
+                  closeResolve();
+                });
+              }),
+          });
+        });
+      }),
+  ),
+  (server) =>
+    Effect.tryPromise({
+      try: () => server.close(),
+      catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(Effect.orDie),
 );
 
@@ -585,6 +870,8 @@ const makeResolver = (persistence: SqlControlPlanePersistence) =>
       getSourceById: () => Effect.fail(new Error("not implemented in test")),
       addExecutorSource: () => Effect.fail(new Error("not implemented in test")),
       connectMcpSource: () => Effect.fail(new Error("not implemented in test")),
+      startSourceOAuthSession: () => Effect.fail(new Error("not implemented in test")),
+      completeSourceOAuthSession: () => Effect.fail(new Error("not implemented in test")),
       completeSourceCredentialSetup: () => Effect.fail(new Error("not implemented in test")),
     } as RuntimeSourceAuthService,
   });
@@ -862,6 +1149,196 @@ describe("workspace-execution-environment", () => {
         full_name: "vercel/ai",
       });
       expect(specServer.seenAuthHeaders).toEqual(["Bearer ghp_test_token"]);
+    }),
+  );
+
+  it.scoped("adds a GraphQL source through executor.sources.add with elicited credentials", () =>
+    Effect.gen(function* () {
+      const graphqlServer = yield* makeGraphqlServer;
+      const persistence = yield* makePersistence;
+      const workspaceId = WorkspaceIdSchema.make("ws_add_graphql");
+      const resolveEnvironment = makeResolverWithLiveSourceAuth(persistence);
+      const now = Date.now();
+      const tokenSecretMaterialId = SecretMaterialIdSchema.make(
+        "sec_test_graphql_bearer",
+      );
+      yield* persistence.rows.secretMaterials.upsert({
+        id: tokenSecretMaterialId,
+        name: null,
+        purpose: "auth_material",
+        value: "linear_test_token",
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const environment = yield* resolveEnvironment({
+        workspaceId,
+        accountId: AccountIdSchema.make("acc_add_graphql"),
+        executionId: ExecutionIdSchema.make("exec_add_graphql"),
+        onElicitation: () =>
+          Effect.succeed({
+            action: "accept" as const,
+            content: {
+              authKind: "bearer",
+              tokenRef: {
+                providerId: "postgres",
+                handle: tokenSecretMaterialId,
+              },
+            },
+          }),
+      });
+
+      const added = (yield* environment.toolInvoker.invoke({
+        path: "executor.sources.add",
+        args: {
+          kind: "graphql",
+          endpoint: graphqlServer.endpoint,
+          name: "Linear",
+          namespace: "linear",
+        },
+        context: {
+          runId: "exec_add_graphql",
+        },
+      })) as {
+        id: SourceId;
+        kind: string;
+        status: string;
+        auth: {
+          kind: string;
+          token?: {
+            providerId: string;
+          };
+        };
+      };
+
+      expect(added.kind).toBe("graphql");
+      expect(added.status).toBe("connected");
+      expect(added.auth.kind).toBe("bearer");
+      expect(added.auth.token?.providerId).toBe("postgres");
+
+      const storedSource = yield* persistence.rows.sources.getByWorkspaceAndId(
+        workspaceId,
+        added.id,
+      );
+      expect(Option.isSome(storedSource)).toBe(true);
+      if (Option.isSome(storedSource)) {
+        expect(storedSource.value.sourceDocumentText).toContain('"__schema"');
+      }
+
+      const freshEnvironment = yield* resolveEnvironment({
+        workspaceId,
+        accountId: AccountIdSchema.make("acc_add_graphql_fresh"),
+        executionId: ExecutionIdSchema.make("exec_add_graphql_fresh"),
+      });
+
+      const discovered = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "discover",
+        args: {
+          query: "linear current user viewer",
+          limit: 5,
+        },
+      })) as {
+        bestPath: string | null;
+      };
+
+      expect(discovered.bestPath).toBe("linear.viewer");
+
+      const describeCreateIssue = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "describe.tool",
+        args: {
+          path: "linear.createIssue",
+          includeSchemas: true,
+        },
+      })) as {
+        path: string;
+        inputType?: string;
+        inputSchemaJson?: string;
+      } | null;
+
+      expect(describeCreateIssue?.path).toBe("linear.createIssue");
+      expect(describeCreateIssue?.inputType).toContain("input");
+      expect(describeCreateIssue?.inputType).toContain("title");
+
+      const viewerResult = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "linear.viewer",
+        args: {},
+      })) as {
+        data: {
+          id: string;
+          name: string;
+          __typename: string;
+        };
+        errors: unknown[];
+      };
+
+      expect(viewerResult).toMatchObject({
+        data: {
+          id: "usr_123",
+          name: "Rhys",
+          __typename: "User",
+        },
+        errors: [],
+      });
+
+      const createIssueResult = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "linear.createIssue",
+        args: {
+          input: {
+            title: "Ship GraphQL field tools",
+          },
+        },
+      })) as {
+        data: {
+          id: string;
+          identifier: string;
+          title: string;
+          __typename: string;
+        };
+        errors: unknown[];
+      };
+
+      expect(createIssueResult).toMatchObject({
+        data: {
+          id: "iss_created",
+          identifier: "ENG-999",
+          title: "Ship GraphQL field tools",
+          __typename: "Issue",
+        },
+        errors: [],
+      });
+
+      const rawRequestResult = (yield* freshEnvironment.toolInvoker.invoke({
+        path: "linear.request",
+        args: {
+          query: "query Viewer { viewer { id name } }",
+        },
+      })) as {
+        status: number;
+        body: {
+          data: {
+            viewer: {
+              id: string;
+              name: string;
+            };
+          };
+        };
+      };
+
+      expect(rawRequestResult.status).toBe(200);
+      expect(rawRequestResult.body).toEqual({
+        data: {
+          viewer: {
+            id: "usr_123",
+            name: "Rhys",
+          },
+        },
+      });
+      expect(graphqlServer.seenAuthHeaders).toEqual([
+        "Bearer linear_test_token",
+        "Bearer linear_test_token",
+        "Bearer linear_test_token",
+        "Bearer linear_test_token",
+      ]);
     }),
   );
 

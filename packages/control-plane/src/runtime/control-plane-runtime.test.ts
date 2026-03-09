@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+
 import { describe, expect, it } from "@effect/vitest";
 import { assertTrue } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
@@ -25,6 +27,80 @@ const makeRuntime = Effect.acquireRelease(
   (runtime) => Effect.promise(() => runtime.close()).pipe(Effect.orDie),
 );
 
+type OpenApiSpecServer = {
+  baseUrl: string;
+  specUrl: string;
+  close: () => Promise<void>;
+};
+
+const makeOpenApiSpecServer = Effect.acquireRelease(
+  Effect.promise<OpenApiSpecServer>(
+    () =>
+      new Promise<OpenApiSpecServer>((resolve, reject) => {
+        const openApiDocument = JSON.stringify({
+          openapi: "3.0.3",
+          info: {
+            title: "GitHub Test API",
+            version: "1.0.0",
+          },
+          paths: {
+            "/repos/{owner}/{repo}": {
+              get: {
+                operationId: "repos/get-repo",
+                tags: ["repos"],
+                summary: "Get a repository",
+                responses: {
+                  200: {
+                    description: "ok",
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const server = createServer((request, response) => {
+          if (request.url !== "/openapi.json") {
+            response.statusCode = 404;
+            response.end();
+            return;
+          }
+
+          response.statusCode = 200;
+          response.setHeader("content-type", "application/json");
+          response.end(openApiDocument);
+        });
+
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          const address = server.address();
+          if (!address || typeof address === "string") {
+            reject(new Error("Failed to bind OpenAPI runtime test server"));
+            return;
+          }
+
+          const baseUrl = `http://127.0.0.1:${address.port}`;
+          resolve({
+            baseUrl,
+            specUrl: `${baseUrl}/openapi.json`,
+            close: () =>
+              new Promise<void>((closeResolve, closeReject) => {
+                server.close((error) => {
+                  if (error) {
+                    closeReject(error);
+                    return;
+                  }
+
+                  closeResolve();
+                });
+              }),
+          });
+        });
+      }),
+  ),
+  (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
+);
+
 const expectLeft = <A, E>(effect: Effect.Effect<A, E, never>) =>
   Effect.either(effect).pipe(
     Effect.flatMap((result) =>
@@ -38,6 +114,7 @@ describe("control-plane-runtime", () => {
   it.scoped("supports full CRUD flow over HTTP API", () =>
     Effect.gen(function* () {
       const runtime = yield* makeRuntime;
+      const openApiServer = yield* makeOpenApiSpecServer;
 
       const createOrg = yield* withControlPlaneClient(
         { runtime, accountId: "acc_1" },
@@ -69,8 +146,8 @@ describe("control-plane-runtime", () => {
             payload: {
               name: "Github",
               kind: "openapi",
-              endpoint: "https://api.github.com",
-              specUrl: "https://api.github.com/openapi.json",
+              endpoint: openApiServer.baseUrl,
+              specUrl: openApiServer.specUrl,
               auth: {
                 kind: "none",
               },
@@ -112,6 +189,62 @@ describe("control-plane-runtime", () => {
           }),
       );
       expect(listPolicies.length).toBe(1);
+    }),
+  );
+
+  it.scoped("discovers and connects an OpenAPI source through the HTTP API", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeRuntime;
+      const openApiServer = yield* makeOpenApiSpecServer;
+
+      const organization = yield* withControlPlaneClient(
+        { runtime, accountId: "acc_discover" },
+        (client) =>
+          client.organizations.create({
+            payload: { name: "Discovery Org" },
+          }),
+      );
+      const workspace = yield* withControlPlaneClient(
+        { runtime, accountId: "acc_discover" },
+        (client) =>
+          client.workspaces.create({
+            path: { organizationId: organization.id },
+            payload: { name: "Discovery Workspace" },
+          }),
+      );
+
+      const discovered = yield* withControlPlaneClient(
+        { runtime, accountId: "acc_discover" },
+        (client) =>
+          client.sources.discover({
+            payload: {
+              url: openApiServer.specUrl,
+            },
+          }),
+      );
+      expect(discovered.detectedKind).toBe("openapi");
+      expect(discovered.specUrl).toBe(openApiServer.specUrl);
+      expect(discovered.endpoint).toBe(openApiServer.baseUrl);
+
+      const connected = yield* withControlPlaneClient(
+        { runtime, accountId: "acc_discover" },
+        (client) =>
+          client.sources.connect({
+            path: { workspaceId: workspace.id },
+            payload: {
+              kind: "openapi",
+              endpoint: discovered.endpoint,
+              specUrl: discovered.specUrl ?? openApiServer.specUrl,
+              name: discovered.name,
+              namespace: discovered.namespace,
+              auth: { kind: "none" },
+            },
+          }),
+      );
+      expect(connected.kind).toBe("connected");
+      expect(connected.source.kind).toBe("openapi");
+      expect(connected.source.status).toBe("connected");
+      expect(connected.source.specUrl).toBe(openApiServer.specUrl);
     }),
   );
 

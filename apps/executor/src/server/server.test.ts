@@ -802,7 +802,7 @@ describe("local-executor-server", () => {
     }),
   );
 
-  it.scoped("starts MCP OAuth from the sources API and completes the popup callback flow", () =>
+  it.scoped("starts source OAuth without creating a source and stores secrets on callback", () =>
     Effect.gen(function* () {
       const oauthServer = yield* Effect.acquireRelease(
         Effect.promise(() => startOAuthProtectedMcpServer()),
@@ -820,16 +820,15 @@ describe("local-executor-server", () => {
       const installation = yield* bootstrapClient.local.installation({});
 
       const startResponse = yield* Effect.promise(() =>
-        fetch(`${server.baseUrl}/v1/workspaces/${encodeURIComponent(installation.workspaceId)}/sources/mcp/oauth/start`, {
+        fetch(`${server.baseUrl}/v1/workspaces/${encodeURIComponent(installation.workspaceId)}/oauth/source-auth/start`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
             "x-executor-account-id": installation.accountId,
           },
           body: JSON.stringify({
+            provider: "mcp",
             endpoint: oauthServer.endpoint,
-            name: "Axiom",
-            namespace: "axiom",
             transport: "auto",
           }),
         }),
@@ -837,29 +836,26 @@ describe("local-executor-server", () => {
 
       assertTrue(startResponse.ok);
       const started: {
-        kind: "connected" | "oauth_required";
-        source: { id: string; status: string; auth: { kind: string } };
-        authorizationUrl?: string;
+        sessionId: string;
+        authorizationUrl: string;
       } = yield* Effect.promise(() => startResponse.json() as Promise<{
-        kind: "connected" | "oauth_required";
-        source: { id: string; status: string; auth: { kind: string } };
-        authorizationUrl?: string;
+        sessionId: string;
+        authorizationUrl: string;
       }>);
 
-      expect(started.kind).toBe("oauth_required");
-      expect(started.source.status).toBe("auth_required");
+      expect(started.sessionId).toBeTruthy();
       expect(started.authorizationUrl).toBeDefined();
 
       const callbackResponse = yield* Effect.promise(() =>
-        fetch(started.authorizationUrl!, {
+        fetch(started.authorizationUrl, {
           redirect: "follow",
         }),
       );
 
       assertTrue(callbackResponse.ok);
       const callbackHtml = yield* Effect.promise(() => callbackResponse.text());
-      expect(callbackHtml).toContain("Source connected:");
-      expect(callbackHtml).toContain("executor-v3:source-oauth-result");
+      expect(callbackHtml).toContain("OAuth connected");
+      expect(callbackHtml).toContain("executor-v3:oauth-result");
 
       const client = yield* createControlPlaneClient({
         baseUrl: server.baseUrl,
@@ -870,12 +866,12 @@ describe("local-executor-server", () => {
           workspaceId: installation.workspaceId,
         },
       });
-      const source = sources.find((candidate) => candidate.id === started.source.id);
 
-      assertTrue(Boolean(source));
+      expect(sources).toHaveLength(0);
 
-      expect(source?.status).toBe("connected");
-      expect(source?.auth.kind).toBe("oauth2");
+      const secrets = yield* bootstrapClient.local.listSecrets({});
+      expect(secrets.some((secret) => secret.purpose === "oauth_access_token")).toBe(true);
+      expect(secrets.some((secret) => secret.purpose === "oauth_refresh_token")).toBe(true);
     }),
   );
 
