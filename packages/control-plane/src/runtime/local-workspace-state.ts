@@ -1,11 +1,13 @@
-import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { NodeFileSystem } from "@effect/platform-node";
 
 import {
   PolicyIdSchema,
   SourceStatusSchema,
   TimestampMsSchema,
 } from "#schema";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
@@ -44,6 +46,20 @@ export type LocalWorkspaceState = typeof LocalWorkspaceStateSchema.Type;
 
 const decodeLocalWorkspaceState = Schema.decodeUnknownSync(LocalWorkspaceStateSchema);
 
+const provideNodeFileSystem = <A, E, R>(
+  effect: Effect.Effect<A, E, R | FileSystem.FileSystem>,
+): Effect.Effect<A, E, Exclude<R, FileSystem.FileSystem>> =>
+  effect.pipe(Effect.provide(NodeFileSystem.layer)) as Effect.Effect<
+    A,
+    E,
+    Exclude<R, FileSystem.FileSystem>
+  >;
+
+const mapFileSystemError = (path: string, action: string) => (cause: unknown): Error => {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`Failed to ${action} ${path}: ${message}`);
+};
+
 const defaultLocalWorkspaceState = (): LocalWorkspaceState => ({
   version: 1,
   sources: {},
@@ -54,36 +70,44 @@ export const localWorkspaceStatePath = (
   context: ResolvedLocalWorkspaceContext,
 ): string => join(context.stateDirectory, WORKSPACE_STATE_BASENAME);
 
-export const loadLocalWorkspaceState = async (
+export const loadLocalWorkspaceState = (
   context: ResolvedLocalWorkspaceContext,
-): Promise<LocalWorkspaceState> => {
-  const path = localWorkspaceStatePath(context);
-
-  try {
-    const content = await fs.readFile(path, "utf8");
-    return decodeLocalWorkspaceState(JSON.parse(content) as unknown);
-  } catch (cause) {
-    if (
-      cause instanceof Error
-      && ("code" in cause)
-      && (cause as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+): Effect.Effect<LocalWorkspaceState, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = localWorkspaceStatePath(context);
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(mapFileSystemError(path, "check workspace state path")),
+    );
+    if (!exists) {
       return defaultLocalWorkspaceState();
     }
 
-    const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`Invalid local workspace state at ${path}: ${message}`);
-  }
-};
+    const content = yield* fs.readFileString(path, "utf8").pipe(
+      Effect.mapError(mapFileSystemError(path, "read workspace state")),
+    );
+    return yield* Effect.try({
+      try: () => decodeLocalWorkspaceState(JSON.parse(content) as unknown),
+      catch: (cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        return new Error(`Invalid local workspace state at ${path}: ${message}`);
+      },
+    });
+  }));
 
-export const writeLocalWorkspaceState = async (input: {
+export const writeLocalWorkspaceState = (input: {
   context: ResolvedLocalWorkspaceContext;
   state: LocalWorkspaceState;
-}): Promise<void> => {
-  await fs.mkdir(input.context.stateDirectory, { recursive: true });
-  await fs.writeFile(
-    localWorkspaceStatePath(input.context),
-    `${JSON.stringify(input.state, null, 2)}\n`,
-    "utf8",
-  );
-};
+}): Effect.Effect<void, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(input.context.stateDirectory, { recursive: true }).pipe(
+      Effect.mapError(mapFileSystemError(input.context.stateDirectory, "create state directory")),
+    );
+    yield* fs.writeFileString(
+      localWorkspaceStatePath(input.context),
+      `${JSON.stringify(input.state, null, 2)}\n`,
+    ).pipe(
+      Effect.mapError(mapFileSystemError(localWorkspaceStatePath(input.context), "write workspace state")),
+    );
+  }));

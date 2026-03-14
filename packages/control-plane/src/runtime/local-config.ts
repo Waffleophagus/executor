@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { promises as fs } from "node:fs";
+import { FileSystem } from "@effect/platform";
+import { NodeFileSystem } from "@effect/platform-node";
 import {
   type ParseError as JsoncParseError,
   parse as parseJsoncDocument,
@@ -15,6 +16,7 @@ import {
   type LocalConfigSecretProvider,
   type LocalConfigSource,
 } from "#schema";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 const decodeLocalExecutorConfig = Schema.decodeUnknownSync(LocalExecutorConfigSchema);
@@ -30,22 +32,18 @@ const normalizeSlashPath = (value: string): string =>
 const stableHash = (value: string): string =>
   createHash("sha256").update(value).digest("hex").slice(0, 16);
 
-const fileExists = async (path: string): Promise<boolean> => {
-  try {
-    await fs.access(path);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const provideNodeFileSystem = <A, E, R>(
+  effect: Effect.Effect<A, E, R | FileSystem.FileSystem>,
+): Effect.Effect<A, E, Exclude<R, FileSystem.FileSystem>> =>
+  effect.pipe(Effect.provide(NodeFileSystem.layer)) as Effect.Effect<
+    A,
+    E,
+    Exclude<R, FileSystem.FileSystem>
+  >;
 
-const pathExists = async (path: string): Promise<boolean> => {
-  try {
-    await fs.access(path);
-    return true;
-  } catch {
-    return false;
-  }
+const mapFileSystemError = (path: string, action: string) => (cause: unknown): Error => {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`Failed to ${action} ${path}: ${message}`);
 };
 
 const trimOrUndefined = (value: string | undefined | null): string | undefined => {
@@ -111,21 +109,26 @@ export const resolveDefaultHomeConfigCandidates = (input: {
   ]);
 };
 
-export const resolveHomeConfigPath = async (input: {
+export const resolveHomeConfigPath = (input: {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   homeDirectory?: string;
-} = {}): Promise<string> => {
-  const candidates = resolveDefaultHomeConfigCandidates(input);
+} = {}): Effect.Effect<string, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const candidates = resolveDefaultHomeConfigCandidates(input);
 
-  for (const candidate of candidates) {
-    if (await fileExists(candidate)) {
-      return candidate;
+    for (const candidate of candidates) {
+      const exists = yield* fs.exists(candidate).pipe(
+        Effect.mapError(mapFileSystemError(candidate, "check config path")),
+      );
+      if (exists) {
+        return candidate;
+      }
     }
-  }
 
-  return candidates[0]!;
-};
+    return candidates[0]!;
+  }));
 
 const formatJsoncParseErrors = (content: string, errors: readonly JsoncParseError[]): string => {
   const lines = content.split("\n");
@@ -233,47 +236,74 @@ export const mergeLocalExecutorConfigs = (
   });
 };
 
-const resolveProjectConfigPath = async (workspaceRoot: string): Promise<string> => {
-  const jsoncPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_BASENAME);
-  if (await fileExists(jsoncPath)) {
-    return jsoncPath;
-  }
-
-  const jsonPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_FALLBACK_BASENAME);
-  if (await fileExists(jsonPath)) {
-    return jsonPath;
-  }
-
-  return jsoncPath;
-};
-
-const hasProjectConfig = async (workspaceRoot: string): Promise<boolean> =>
-  fileExists(join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_BASENAME))
-  || fileExists(join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_FALLBACK_BASENAME));
-
-const resolveWorkspaceRootFromCwd = async (cwd: string): Promise<string> => {
-  let current = resolve(cwd);
-  let nearestProjectConfigRoot: string | null = null;
-  let nearestGitRoot: string | null = null;
-
-  while (true) {
-    if (nearestProjectConfigRoot === null && (await hasProjectConfig(current))) {
-      nearestProjectConfigRoot = current;
+const resolveProjectConfigPathEffect = (workspaceRoot: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const jsoncPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_BASENAME);
+    const jsoncExists = yield* fs.exists(jsoncPath).pipe(
+      Effect.mapError(mapFileSystemError(jsoncPath, "check project config path")),
+    );
+    if (jsoncExists) {
+      return jsoncPath;
     }
 
-    if (nearestGitRoot === null && (await pathExists(join(current, ".git")))) {
-      nearestGitRoot = current;
+    const jsonPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_FALLBACK_BASENAME);
+    const jsonExists = yield* fs.exists(jsonPath).pipe(
+      Effect.mapError(mapFileSystemError(jsonPath, "check project config path")),
+    );
+    return jsonExists ? jsonPath : jsoncPath;
+  });
+
+const hasProjectConfigEffect = (workspaceRoot: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const jsoncPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_BASENAME);
+    const jsonPath = join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, PROJECT_CONFIG_FALLBACK_BASENAME);
+    const [jsoncExists, jsonExists] = yield* Effect.all([
+      fs.exists(jsoncPath).pipe(
+        Effect.mapError(mapFileSystemError(jsoncPath, "check project config path")),
+      ),
+      fs.exists(jsonPath).pipe(
+        Effect.mapError(mapFileSystemError(jsonPath, "check project config path")),
+      ),
+    ]);
+    return jsoncExists || jsonExists;
+  });
+
+const resolveWorkspaceRootFromCwdEffect = (cwd: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    let current = resolve(cwd);
+    let nearestProjectConfigRoot: string | null = null;
+    let nearestGitRoot: string | null = null;
+
+    while (true) {
+      if (nearestProjectConfigRoot === null) {
+        const hasProjectConfig = yield* hasProjectConfigEffect(current);
+        if (hasProjectConfig) {
+          nearestProjectConfigRoot = current;
+        }
+      }
+
+      if (nearestGitRoot === null) {
+        const gitPath = join(current, ".git");
+        const gitExists = yield* fs.exists(gitPath).pipe(
+          Effect.mapError(mapFileSystemError(gitPath, "check git root")),
+        );
+        if (gitExists) {
+          nearestGitRoot = current;
+        }
+      }
+
+      const parent = dirname(current);
+      if (parent === current) {
+        break;
+      }
+      current = parent;
     }
 
-    const parent = dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-
-  return nearestProjectConfigRoot ?? nearestGitRoot ?? resolve(cwd);
-};
+    return nearestProjectConfigRoot ?? nearestGitRoot ?? resolve(cwd);
+  });
 
 export type ResolvedLocalWorkspaceContext = {
   cwd: string;
@@ -295,73 +325,91 @@ export type LoadedLocalExecutorConfig = {
   projectConfigPath: string;
 };
 
-export const resolveLocalWorkspaceContext = async (input: {
+export const resolveLocalWorkspaceContext = (input: {
   cwd?: string;
   workspaceRoot?: string;
-} = {}): Promise<ResolvedLocalWorkspaceContext> => {
-  const cwd = resolve(input.cwd ?? process.cwd());
-  const workspaceRoot = resolve(
-    input.workspaceRoot ?? (await resolveWorkspaceRootFromCwd(cwd)),
-  );
-  const workspaceName = basename(workspaceRoot) || "workspace";
-  const projectConfigPath = await resolveProjectConfigPath(workspaceRoot);
-  const homeConfigPath = await resolveHomeConfigPath();
+} = {}): Effect.Effect<ResolvedLocalWorkspaceContext, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const cwd = resolve(input.cwd ?? process.cwd());
+    const workspaceRoot = resolve(
+      input.workspaceRoot ?? (yield* resolveWorkspaceRootFromCwdEffect(cwd)),
+    );
+    const workspaceName = basename(workspaceRoot) || "workspace";
+    const projectConfigPath = yield* resolveProjectConfigPathEffect(workspaceRoot);
+    const homeConfigPath = yield* resolveHomeConfigPath();
 
-  return {
-    cwd,
-    workspaceRoot,
-    workspaceName,
-    configDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY),
-    projectConfigPath,
-    homeConfigPath,
-    artifactsDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "artifacts"),
-    stateDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "state"),
-    installationId: `local_${stableHash(normalizeSlashPath(workspaceRoot))}`,
-  };
-};
+    return {
+      cwd,
+      workspaceRoot,
+      workspaceName,
+      configDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY),
+      projectConfigPath,
+      homeConfigPath,
+      artifactsDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "artifacts"),
+      stateDirectory: join(workspaceRoot, PROJECT_CONFIG_DIRECTORY, "state"),
+      installationId: `local_${stableHash(normalizeSlashPath(workspaceRoot))}`,
+    };
+  }));
 
-export const readOptionalLocalExecutorConfig = async (
+export const readOptionalLocalExecutorConfig = (
   path: string,
-): Promise<LocalExecutorConfig | null> => {
-  if (!(await fileExists(path))) {
-    return null;
-  }
+): Effect.Effect<LocalExecutorConfig | null, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(mapFileSystemError(path, "check config path")),
+    );
+    if (!exists) {
+      return null;
+    }
 
-  const content = await fs.readFile(path, "utf8");
-  return parseJsonc({ path, content });
-};
+    const content = yield* fs.readFileString(path, "utf8").pipe(
+      Effect.mapError(mapFileSystemError(path, "read config")),
+    );
+    return yield* Effect.try({
+      try: () => parseJsonc({ path, content }),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+    });
+  }));
 
-export const loadLocalExecutorConfig = async (
+export const loadLocalExecutorConfig = (
   context: ResolvedLocalWorkspaceContext,
-): Promise<LoadedLocalExecutorConfig> => {
-  const [homeConfig, projectConfig] = await Promise.all([
-    readOptionalLocalExecutorConfig(context.homeConfigPath),
-    readOptionalLocalExecutorConfig(context.projectConfigPath),
-  ]);
+): Effect.Effect<LoadedLocalExecutorConfig, Error> =>
+  Effect.gen(function* () {
+    const [homeConfig, projectConfig] = yield* Effect.all([
+      readOptionalLocalExecutorConfig(context.homeConfigPath),
+      readOptionalLocalExecutorConfig(context.projectConfigPath),
+    ]);
 
-  return {
-    config: mergeLocalExecutorConfigs(homeConfig, projectConfig),
-    homeConfig,
-    projectConfig,
-    homeConfigPath: context.homeConfigPath,
-    projectConfigPath: context.projectConfigPath,
-  };
-};
+    return {
+      config: mergeLocalExecutorConfigs(homeConfig, projectConfig),
+      homeConfig,
+      projectConfig,
+      homeConfigPath: context.homeConfigPath,
+      projectConfigPath: context.projectConfigPath,
+    };
+  });
 
 export const encodeLocalExecutorConfig = (config: LocalExecutorConfig): string =>
   `${JSON.stringify(config, null, 2)}\n`;
 
-export const writeProjectLocalExecutorConfig = async (input: {
+export const writeProjectLocalExecutorConfig = (input: {
   context: ResolvedLocalWorkspaceContext;
   config: LocalExecutorConfig;
-}): Promise<void> => {
-  await fs.mkdir(input.context.configDirectory, { recursive: true });
-  await fs.writeFile(
-    input.context.projectConfigPath,
-    encodeLocalExecutorConfig(input.config),
-    "utf8",
-  );
-};
+}): Effect.Effect<void, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(input.context.configDirectory, { recursive: true }).pipe(
+      Effect.mapError(mapFileSystemError(input.context.configDirectory, "create config directory")),
+    );
+    yield* fs.writeFileString(
+      input.context.projectConfigPath,
+      encodeLocalExecutorConfig(input.config),
+    ).pipe(
+      Effect.mapError(mapFileSystemError(input.context.projectConfigPath, "write config")),
+    );
+  }));
 
 export const resolveConfigRelativePath = (input: {
   path: string;

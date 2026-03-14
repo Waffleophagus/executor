@@ -167,14 +167,9 @@ export const loadWorkspaceSourceRecipes = (input: {
     });
     const localRecipes = yield* Effect.forEach(sources, (source) =>
       Effect.gen(function* () {
-        const artifact = yield* Effect.tryPromise({
-          try: () =>
-            readLocalSourceArtifact({
-              context: runtimeLocalWorkspace.context,
-              sourceId: source.id,
-            }),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
+        const artifact = yield* readLocalSourceArtifact({
+          context: runtimeLocalWorkspace.context,
+          sourceId: source.id,
         });
         if (artifact === null) {
           return null;
@@ -231,14 +226,9 @@ export const loadSourceWithRecipe = (input: {
       sourceId: input.sourceId,
       actorAccountId: input.actorAccountId,
     });
-    const artifact = yield* Effect.tryPromise({
-      try: () =>
-        readLocalSourceArtifact({
-          context: runtimeLocalWorkspace.context,
-          sourceId: source.id,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    const artifact = yield* readLocalSourceArtifact({
+      context: runtimeLocalWorkspace.context,
+      sourceId: source.id,
     });
     if (artifact === null) {
       return yield* Effect.fail(

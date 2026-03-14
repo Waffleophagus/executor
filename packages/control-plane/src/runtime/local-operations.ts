@@ -185,7 +185,14 @@ export const getLocalInstallation = () =>
     const store = yield* ControlPlaneStore;
     const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
     const context = runtimeLocalWorkspace?.context
-      ?? (yield* Effect.promise(() => resolveLocalWorkspaceContext()));
+      ?? (yield* resolveLocalWorkspaceContext().pipe(
+        Effect.mapError((error) =>
+          localOps.installation.unknownStorage(
+            error,
+            "Failed resolving local workspace context",
+          ),
+        ),
+      ));
 
     return yield* loadLocalInstallation(store, context);
   });

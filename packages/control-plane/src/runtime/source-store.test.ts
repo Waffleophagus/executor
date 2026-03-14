@@ -56,16 +56,8 @@ const makeRuntimeLocalWorkspace = (input: {
 }) =>
   Effect.gen(function* () {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "executor-source-store-"));
-    const context = yield* Effect.tryPromise({
-      try: () => resolveLocalWorkspaceContext({ workspaceRoot }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    const loadedConfig = yield* Effect.tryPromise({
-      try: () => loadLocalExecutorConfig(context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+    const loadedConfig = yield* loadLocalExecutorConfig(context);
 
     return {
       context,
@@ -245,17 +237,9 @@ describe("source-store", () => {
       expect(Option.isNone(yield* persistence.rows.secretMaterials.getById(secondTokenId))).toBe(true);
       expect(yield* persistence.rows.authArtifacts.listByWorkspaceId(workspaceId)).toHaveLength(0);
       expect(yield* persistence.rows.sourceAuthSessions.listByWorkspaceId(workspaceId)).toHaveLength(0);
-      const config = yield* Effect.tryPromise({
-        try: () => loadLocalExecutorConfig(runtimeLocalWorkspace.context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const config = yield* loadLocalExecutorConfig(runtimeLocalWorkspace.context);
       expect(config.config?.sources?.[sourceId]).toBeUndefined();
-      const workspaceState = yield* Effect.tryPromise({
-        try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const workspaceState = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
       expect(workspaceState.sources[sourceId]).toBeUndefined();
     }),
   );

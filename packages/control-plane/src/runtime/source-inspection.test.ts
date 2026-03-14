@@ -59,16 +59,8 @@ const makeRuntimeLocalWorkspaceState = (
       const workspaceRoot = mkdtempSync(
         join(tmpdir(), "executor-source-inspection-"),
       );
-      const context = yield* Effect.tryPromise({
-        try: () => resolveLocalWorkspaceContext({ workspaceRoot }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const loadedConfig = yield* Effect.tryPromise({
-        try: () => loadLocalExecutorConfig(context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+      const loadedConfig = yield* loadLocalExecutorConfig(context);
 
       return {
         context,
@@ -215,15 +207,15 @@ describe("source-inspection", () => {
         workspaceId,
         sourceId,
       });
-      await writeProjectLocalExecutorConfig({
+      await Effect.runPromise(writeProjectLocalExecutorConfig({
         context: runtimeLocalWorkspace.context,
         config: {
           sources: {
             [sourceId]: configSourceFromSource(source),
           },
         },
-      });
-      await writeLocalSourceArtifact({
+      }));
+      await Effect.runPromise(writeLocalSourceArtifact({
         context: runtimeLocalWorkspace.context,
         sourceId,
         artifact: buildLocalSourceArtifact({
@@ -271,8 +263,8 @@ describe("source-inspection", () => {
             })],
           },
         }),
-      });
-      await writeLocalWorkspaceState({
+      }));
+      await Effect.runPromise(writeLocalWorkspaceState({
         context: runtimeLocalWorkspace.context,
         state: {
           version: 1,
@@ -287,7 +279,7 @@ describe("source-inspection", () => {
           },
           policies: {},
         },
-      });
+      }));
 
       const inspection = await Effect.runPromise(
         getSourceInspection({

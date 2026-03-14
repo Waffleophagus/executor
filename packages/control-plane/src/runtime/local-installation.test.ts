@@ -36,9 +36,9 @@ describe("local-installation", () => {
   it.scoped("is idempotent when loading the default local installation", () =>
     Effect.gen(function* () {
       const runtime = yield* makeRuntime;
-      const context = yield* Effect.promise(() =>
-        resolveLocalWorkspaceContext({ workspaceRoot: TEST_WORKSPACE_ROOT }),
-      );
+      const context = yield* resolveLocalWorkspaceContext({
+        workspaceRoot: TEST_WORKSPACE_ROOT,
+      });
 
       const first = runtime.localInstallation;
       const second = yield* getOrProvisionLocalInstallation({

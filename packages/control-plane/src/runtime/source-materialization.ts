@@ -45,11 +45,7 @@ export const syncSourceMaterialization = (input: {
     const runtimeLocalWorkspace = yield* requireRuntimeLocalWorkspace(input.source.workspaceId);
 
     if (!shouldIndexSource(input.source)) {
-      const state = yield* Effect.tryPromise({
-        try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const state = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
       const existingSourceState = state.sources[input.source.id];
       const nextState: LocalWorkspaceState = {
         ...state,
@@ -64,14 +60,9 @@ export const syncSourceMaterialization = (input: {
           },
         },
       };
-      yield* Effect.tryPromise({
-        try: () =>
-          writeLocalWorkspaceState({
-            context: runtimeLocalWorkspace.context,
-            state: nextState,
-          }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
+      yield* writeLocalWorkspaceState({
+        context: runtimeLocalWorkspace.context,
+        state: nextState,
       });
       return;
     }
@@ -89,25 +80,16 @@ export const syncSourceMaterialization = (input: {
           resolveSecretMaterial: input.resolveSecretMaterial,
         }),
     });
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalSourceArtifact({
-          context: runtimeLocalWorkspace.context,
-          sourceId: input.source.id,
-          artifact: buildLocalSourceArtifact({
-            source: input.source,
-            materialization,
-          }),
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalSourceArtifact({
+      context: runtimeLocalWorkspace.context,
+      sourceId: input.source.id,
+      artifact: buildLocalSourceArtifact({
+        source: input.source,
+        materialization,
+      }),
     });
 
-    const state = yield* Effect.tryPromise({
-      try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const state = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
     const existingSourceState = state.sources[input.source.id];
     const nextState: LocalWorkspaceState = {
       ...state,
@@ -122,14 +104,9 @@ export const syncSourceMaterialization = (input: {
         },
       },
     };
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: runtimeLocalWorkspace.context,
-          state: nextState,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalWorkspaceState({
+      context: runtimeLocalWorkspace.context,
+      state: nextState,
     });
   });
 
@@ -148,17 +125,12 @@ export const persistMcpRecipeMaterializationFromManifest = (input: {
       manifestEntries: input.manifestEntries,
     });
 
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalSourceArtifact({
-          context: runtimeLocalWorkspace.context,
-          sourceId: input.source.id,
-          artifact: buildLocalSourceArtifact({
-            source: input.source,
-            materialization,
-          }),
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalSourceArtifact({
+      context: runtimeLocalWorkspace.context,
+      sourceId: input.source.id,
+      artifact: buildLocalSourceArtifact({
+        source: input.source,
+        materialization,
+      }),
     });
   });

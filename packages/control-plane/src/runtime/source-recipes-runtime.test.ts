@@ -66,16 +66,8 @@ const makeRuntimeLocalWorkspaceState = (
       const workspaceRoot = mkdtempSync(
         join(tmpdir(), "executor-source-recipes-runtime-"),
       );
-      const context = yield* Effect.tryPromise({
-        try: () => resolveLocalWorkspaceContext({ workspaceRoot }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const loadedConfig = yield* Effect.tryPromise({
-        try: () => loadLocalExecutorConfig(context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+      const loadedConfig = yield* loadLocalExecutorConfig(context);
 
       return {
         context,
@@ -362,18 +354,18 @@ const seedLocalWorkspaceSources = async (input: {
     };
   }>;
 }) => {
-  await writeProjectLocalExecutorConfig({
+  await Effect.runPromise(writeProjectLocalExecutorConfig({
     context: input.runtimeLocalWorkspace.context,
     config: {
       sources: Object.fromEntries(
         input.fixtures.map(({ source }) => [source.id, configSourceFromSource(source)]),
       ),
     },
-  });
+  }));
 
   await Promise.all(
     input.fixtures.map(({ source, materialization }) =>
-      writeLocalSourceArtifact({
+      Effect.runPromise(writeLocalSourceArtifact({
         context: input.runtimeLocalWorkspace.context,
         sourceId: source.id,
         artifact: buildLocalSourceArtifact({
@@ -381,9 +373,10 @@ const seedLocalWorkspaceSources = async (input: {
           materialization,
         }),
       })),
+    ),
   );
 
-  await writeLocalWorkspaceState({
+  await Effect.runPromise(writeLocalWorkspaceState({
     context: input.runtimeLocalWorkspace.context,
     state: {
       version: 1,
@@ -401,7 +394,7 @@ const seedLocalWorkspaceSources = async (input: {
       ),
       policies: {},
     },
-  });
+  }));
 };
 
 describe("source-recipes-runtime", () => {
@@ -774,7 +767,7 @@ describe("source-recipes-runtime", () => {
         const runtimeLocalWorkspace =
           await makeRuntimeLocalWorkspaceState(workspaceId);
 
-        await writeProjectLocalExecutorConfig({
+        await Effect.runPromise(writeProjectLocalExecutorConfig({
           context: runtimeLocalWorkspace.context,
           config: {
             sources: {
@@ -787,8 +780,8 @@ describe("source-recipes-runtime", () => {
               ),
             },
           },
-        });
-        await writeLocalWorkspaceState({
+        }));
+        await Effect.runPromise(writeLocalWorkspaceState({
           context: runtimeLocalWorkspace.context,
           state: {
             version: 1,
@@ -803,7 +796,7 @@ describe("source-recipes-runtime", () => {
             },
             policies: {},
           },
-        });
+        }));
 
         await expect(
           Effect.runPromise(
@@ -834,7 +827,7 @@ describe("source-recipes-runtime", () => {
             operations: [],
           },
         });
-        await writeLocalSourceArtifact({
+        await Effect.runPromise(writeLocalSourceArtifact({
           context: runtimeLocalWorkspace.context,
           sourceId,
           artifact: {
@@ -844,7 +837,7 @@ describe("source-recipes-runtime", () => {
               manifestJson: "{bad-json",
             },
           },
-        });
+        }));
 
         await expect(
           Effect.runPromise(

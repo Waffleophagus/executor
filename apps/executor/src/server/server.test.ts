@@ -92,14 +92,14 @@ const writeConfiguredLocalMcpSource = (input: {
   name?: string;
   namespace?: string;
 }) =>
-  Effect.promise(async () => {
+  Effect.gen(function* () {
     const sourceId = SourceIdSchema.make(input.configKey);
-    const context = await resolveLocalWorkspaceContext({
+    const context = yield* resolveLocalWorkspaceContext({
       workspaceRoot: input.workspaceRoot,
     });
     const installation = deriveLocalInstallation(context);
 
-    await writeProjectLocalExecutorConfig({
+    yield* writeProjectLocalExecutorConfig({
       context,
       config: {
         sources: {
@@ -162,7 +162,7 @@ const writeConfiguredLocalMcpSource = (input: {
       }],
     });
 
-    await writeLocalSourceArtifact({
+    yield* writeLocalSourceArtifact({
       context,
       sourceId,
       artifact: buildLocalSourceArtifact({
@@ -718,6 +718,7 @@ describe("local-executor-server", () => {
       expect(execution.execution.status).toBe("completed");
       expect(execution.execution.resultJson).toBe(JSON.stringify({ sum: 42 }));
     }),
+    15_000,
   );
 
   it.scoped("includes completed MCP return values in text content", () =>

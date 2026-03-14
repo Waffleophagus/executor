@@ -186,16 +186,8 @@ const makeRuntimeLocalWorkspaceState = async (
       const workspaceRoot = mkdtempSync(
         join(tmpdir(), "executor-source-auth-service-"),
       );
-      const context = yield* Effect.tryPromise({
-        try: () => resolveLocalWorkspaceContext({ workspaceRoot }),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
-      const loadedConfig = yield* Effect.tryPromise({
-        try: () => loadLocalExecutorConfig(context),
-        catch: (cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-      });
+      const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+      const loadedConfig = yield* loadLocalExecutorConfig(context);
 
       return {
         context,
@@ -496,10 +488,10 @@ describe("source-auth-service", () => {
               expect(Option.isNone(oldSecret)).toBe(true);
             }
 
-            const localArtifact = await readLocalSourceArtifact({
+            const localArtifact = await Effect.runPromise(readLocalSourceArtifact({
               context: runtimeLocalWorkspace.context,
               sourceId: connectedSource.id,
-            });
+            }));
             expect(localArtifact).not.toBeNull();
             expect(localArtifact?.operations.length).toBeGreaterThan(0);
             expect(

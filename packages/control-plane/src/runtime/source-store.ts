@@ -234,16 +234,8 @@ const configAuthFromSource = (input: {
 const resolveRuntimeLocalWorkspace = (workspaceId: WorkspaceId) =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* requireRuntimeLocalWorkspace(workspaceId);
-    const loadedConfig = yield* Effect.tryPromise({
-      try: () => loadLocalExecutorConfig(runtimeLocalWorkspace.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    const workspaceState = yield* Effect.tryPromise({
-      try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const loadedConfig = yield* loadLocalExecutorConfig(runtimeLocalWorkspace.context);
+    const workspaceState = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
 
     return {
       context: runtimeLocalWorkspace.context,
@@ -297,13 +289,9 @@ const buildLocalSourceRecord = (input: {
       updatedAt: existingState?.updatedAt ?? Date.now(),
     });
 
-    const artifact = yield* Effect.tryPromise({
-      try: () => readLocalSourceArtifact({
-        context: input.context,
-        sourceId: input.sourceId,
-      }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    const artifact = yield* readLocalSourceArtifact({
+      context: input.context,
+      sourceId: input.sourceId,
     }).pipe(
       Effect.catchAll(() => Effect.succeed(null)),
     );
@@ -524,17 +512,12 @@ export const removeSourceById = (rows: SqlControlPlaneRows, input: {
       ...(projectConfig.sources ?? {}),
     };
     delete sources[input.sourceId];
-    yield* Effect.tryPromise({
-      try: () =>
-        writeProjectLocalExecutorConfig({
-          context: localWorkspace.context,
-          config: {
-            ...projectConfig,
-            sources,
-          },
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeProjectLocalExecutorConfig({
+      context: localWorkspace.context,
+      config: {
+        ...projectConfig,
+        sources,
+      },
     });
 
     const {
@@ -545,23 +528,13 @@ export const removeSourceById = (rows: SqlControlPlaneRows, input: {
       ...localWorkspace.workspaceState,
       sources: remainingSources,
     };
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: localWorkspace.context,
-          state: workspaceState,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalWorkspaceState({
+      context: localWorkspace.context,
+      state: workspaceState,
     });
-    yield* Effect.tryPromise({
-      try: () =>
-        removeLocalSourceArtifact({
-          context: localWorkspace.context,
-          sourceId: input.sourceId,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* removeLocalSourceArtifact({
+      context: localWorkspace.context,
+      sourceId: input.sourceId,
     });
 
     yield* rows.sourceAuthSessions.removeByWorkspaceAndSourceId(
@@ -621,17 +594,12 @@ export const persistSource = (
       existingConfigAuth: existingConfigSource?.connection.auth,
       config: localWorkspace.loadedConfig.config,
     });
-    yield* Effect.tryPromise({
-      try: () =>
-        writeProjectLocalExecutorConfig({
-          context: localWorkspace.context,
-          config: {
-            ...projectConfig,
-            sources,
-          },
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeProjectLocalExecutorConfig({
+      context: localWorkspace.context,
+      config: {
+        ...projectConfig,
+        sources,
+      },
     });
 
     const { runtimeAuthArtifact, importAuthArtifact } = splitSourceForStorage({
@@ -715,14 +683,9 @@ export const persistSource = (
         },
       },
     };
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: localWorkspace.context,
-          state: workspaceState,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalWorkspaceState({
+      context: localWorkspace.context,
+      state: workspaceState,
     });
 
     return yield* loadSourceById(rows, {

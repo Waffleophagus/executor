@@ -1,5 +1,6 @@
-import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import { FileSystem } from "@effect/platform";
+import { NodeFileSystem } from "@effect/platform-node";
 
 import {
   SourceIdSchema,
@@ -12,6 +13,7 @@ import {
   type Source,
   type SourceRecipeId,
 } from "#schema";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
@@ -40,6 +42,20 @@ export const LocalSourceArtifactSchema = Schema.Struct({
 export type LocalSourceArtifact = typeof LocalSourceArtifactSchema.Type;
 
 const decodeLocalSourceArtifact = Schema.decodeUnknownSync(LocalSourceArtifactSchema);
+
+const provideNodeFileSystem = <A, E, R>(
+  effect: Effect.Effect<A, E, R | FileSystem.FileSystem>,
+): Effect.Effect<A, E, Exclude<R, FileSystem.FileSystem>> =>
+  effect.pipe(Effect.provide(NodeFileSystem.layer)) as Effect.Effect<
+    A,
+    E,
+    Exclude<R, FileSystem.FileSystem>
+  >;
+
+const mapFileSystemError = (path: string, action: string) => (cause: unknown): Error => {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`Failed to ${action} ${path}: ${message}`);
+};
 
 const localSourceArtifactPath = (input: {
   context: ResolvedLocalWorkspaceContext;
@@ -138,58 +154,63 @@ export const buildLocalSourceArtifact = (input: {
   };
 };
 
-export const readLocalSourceArtifact = async (input: {
+export const readLocalSourceArtifact = (input: {
   context: ResolvedLocalWorkspaceContext;
   sourceId: string;
-}): Promise<LocalSourceArtifact | null> => {
-  const path = localSourceArtifactPath(input);
-
-  try {
-    const content = await fs.readFile(path, "utf8");
-    return decodeLocalSourceArtifact(JSON.parse(content) as unknown);
-  } catch (cause) {
-    if (
-      cause instanceof Error
-      && ("code" in cause)
-      && (cause as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+}): Effect.Effect<LocalSourceArtifact | null, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = localSourceArtifactPath(input);
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(mapFileSystemError(path, "check source artifact path")),
+    );
+    if (!exists) {
       return null;
     }
 
-    const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`Invalid local source artifact at ${path}: ${message}`);
-  }
-};
+    const content = yield* fs.readFileString(path, "utf8").pipe(
+      Effect.mapError(mapFileSystemError(path, "read source artifact")),
+    );
+    return yield* Effect.try({
+      try: () => decodeLocalSourceArtifact(JSON.parse(content) as unknown),
+      catch: (cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        return new Error(`Invalid local source artifact at ${path}: ${message}`);
+      },
+    });
+  }));
 
-export const writeLocalSourceArtifact = async (input: {
+export const writeLocalSourceArtifact = (input: {
   context: ResolvedLocalWorkspaceContext;
   sourceId: string;
   artifact: LocalSourceArtifact;
-}): Promise<void> => {
-  const path = localSourceArtifactPath(input);
-  await fs.mkdir(join(input.context.artifactsDirectory, "sources"), {
-    recursive: true,
-  });
-  await fs.writeFile(path, `${JSON.stringify(input.artifact, null, 2)}\n`, "utf8");
-};
+}): Effect.Effect<void, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = join(input.context.artifactsDirectory, "sources");
+    const path = localSourceArtifactPath(input);
+    yield* fs.makeDirectory(directory, { recursive: true }).pipe(
+      Effect.mapError(mapFileSystemError(directory, "create source artifact directory")),
+    );
+    yield* fs.writeFileString(path, `${JSON.stringify(input.artifact, null, 2)}\n`).pipe(
+      Effect.mapError(mapFileSystemError(path, "write source artifact")),
+    );
+  }));
 
-export const removeLocalSourceArtifact = async (input: {
+export const removeLocalSourceArtifact = (input: {
   context: ResolvedLocalWorkspaceContext;
   sourceId: string;
-}): Promise<void> => {
-  const path = localSourceArtifactPath(input);
-
-  try {
-    await fs.unlink(path);
-  } catch (cause) {
-    if (
-      cause instanceof Error
-      && ("code" in cause)
-      && (cause as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+}): Effect.Effect<void, Error> =>
+  provideNodeFileSystem(Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = localSourceArtifactPath(input);
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(mapFileSystemError(path, "check source artifact path")),
+    );
+    if (!exists) {
       return;
     }
-
-    throw cause;
-  }
-};
+    yield* fs.remove(path).pipe(
+      Effect.mapError(mapFileSystemError(path, "remove source artifact")),
+    );
+  }));

@@ -193,13 +193,10 @@ export const createControlPlaneRuntime = (
     const persistence = Context.get(baseContext, SqlControlPlanePersistenceService);
     const rows = Context.get(baseContext, SqlControlPlaneRowsService);
 
-    const localWorkspaceContext = yield* Effect.tryPromise({
-      try: () =>
-        resolveLocalWorkspaceContext({
-          workspaceRoot: options.workspaceRoot,
-        }),
-      catch: toLocalRuntimeBootstrapError,
+    const localWorkspaceContext = yield* resolveLocalWorkspaceContext({
+      workspaceRoot: options.workspaceRoot,
     }).pipe(
+      Effect.mapError(toLocalRuntimeBootstrapError),
       Effect.catchAll((error) =>
         closeScope(scope).pipe(
           Effect.zipRight(Effect.fail(error)),
@@ -217,10 +214,8 @@ export const createControlPlaneRuntime = (
         )),
     );
 
-    const loadedLocalConfig = yield* Effect.tryPromise({
-      try: () => loadLocalExecutorConfig(localWorkspaceContext),
-      catch: toLocalRuntimeBootstrapError,
-    }).pipe(
+    const loadedLocalConfig = yield* loadLocalExecutorConfig(localWorkspaceContext).pipe(
+      Effect.mapError(toLocalRuntimeBootstrapError),
       Effect.catchAll((error) =>
         closeScope(scope).pipe(
           Effect.zipRight(Effect.fail(error)),

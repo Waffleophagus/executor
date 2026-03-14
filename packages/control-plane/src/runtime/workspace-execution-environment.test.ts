@@ -631,80 +631,65 @@ const persistConnectedEchoTool = (input: {
       updatedAt: now,
     };
 
-    yield* Effect.tryPromise({
-      try: () =>
-        writeProjectLocalExecutorConfig({
-          context: input.runtimeLocalWorkspace.context,
-          config: {
-            sources: {
-              [input.sourceId]: {
-                kind: "mcp",
-                name: source.name,
-                ...(source.namespace ? { namespace: source.namespace } : {}),
-                connection: {
-                  endpoint: source.endpoint,
-                },
-                binding: {
-                  transport: "streamable-http",
-                },
-              },
-            },
-          },
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalSourceArtifact({
-          context: input.runtimeLocalWorkspace.context,
-          sourceId: source.id,
-          artifact: buildLocalSourceArtifact({
-            source,
-            materialization: materializationFromMcpManifestEntries({
-              recipeRevisionId: "src_recipe_rev_materialization" as never,
+    yield* writeProjectLocalExecutorConfig({
+      context: input.runtimeLocalWorkspace.context,
+      config: {
+        sources: {
+          [input.sourceId]: {
+            kind: "mcp",
+            name: source.name,
+            ...(source.namespace ? { namespace: source.namespace } : {}),
+            connection: {
               endpoint: source.endpoint,
-              manifestEntries: [
-                {
-                  toolId: "echo",
-                  toolName: "echo",
-                  description: "Echo the provided string",
-                  inputSchemaJson: JSON.stringify({
-                    type: "object",
-                    properties: {
-                      value: { type: "string" },
-                    },
-                    required: ["value"],
-                    additionalProperties: false,
-                  }),
-                },
-              ],
-            }),
-          }),
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: input.runtimeLocalWorkspace.context,
-          state: {
-            version: 1,
-            sources: {
-              [input.sourceId]: {
-                status: "connected",
-                lastError: null,
-                sourceHash: null,
-                createdAt: now,
-                updatedAt: now,
-              },
             },
-            policies: {},
+            binding: {
+              transport: "streamable-http",
+            },
           },
+        },
+      },
+    });
+    yield* writeLocalSourceArtifact({
+      context: input.runtimeLocalWorkspace.context,
+      sourceId: source.id,
+      artifact: buildLocalSourceArtifact({
+        source,
+        materialization: materializationFromMcpManifestEntries({
+          recipeRevisionId: "src_recipe_rev_materialization" as never,
+          endpoint: source.endpoint,
+          manifestEntries: [
+            {
+              toolId: "echo",
+              toolName: "echo",
+              description: "Echo the provided string",
+              inputSchemaJson: JSON.stringify({
+                type: "object",
+                properties: {
+                  value: { type: "string" },
+                },
+                required: ["value"],
+                additionalProperties: false,
+              }),
+            },
+          ],
         }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+      }),
+    });
+    yield* writeLocalWorkspaceState({
+      context: input.runtimeLocalWorkspace.context,
+      state: {
+        version: 1,
+        sources: {
+          [input.sourceId]: {
+            status: "connected",
+            lastError: null,
+            sourceHash: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+        policies: {},
+      },
     });
   }) as Effect.Effect<void, Error, never>;
 
@@ -931,38 +916,31 @@ const persistConnectedGithubOpenApiSource = (input: {
       ),
     );
     const definitions = compileOpenApiToolDefinitions(manifest);
-    yield* Effect.tryPromise({
-      try: () =>
-        writeProjectLocalExecutorConfig({
-          context: input.runtimeLocalWorkspace.context,
-          config: {
-            sources: {
-              [input.sourceId]: {
-                kind: "openapi",
-                name: source.name,
-                ...(source.namespace ? { namespace: source.namespace } : {}),
-                connection: {
-                  endpoint: source.endpoint,
-                  ...(configAuth !== undefined ? { auth: configAuth } : {}),
-                },
-                binding: {
-                  specUrl: String(source.binding.specUrl),
-                  defaultHeaders: null,
-                },
-              },
+    yield* writeProjectLocalExecutorConfig({
+      context: input.runtimeLocalWorkspace.context,
+      config: {
+        sources: {
+          [input.sourceId]: {
+            kind: "openapi",
+            name: source.name,
+            ...(source.namespace ? { namespace: source.namespace } : {}),
+            connection: {
+              endpoint: source.endpoint,
+              ...(configAuth !== undefined ? { auth: configAuth } : {}),
+            },
+            binding: {
+              specUrl: String(source.binding.specUrl),
+              defaultHeaders: null,
             },
           },
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+        },
+      },
     });
     const refEntries = Object.entries(manifest.refHintTable ?? {});
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalSourceArtifact({
-          context: input.runtimeLocalWorkspace.context,
-          sourceId: source.id,
-          artifact: buildLocalSourceArtifact({
+    yield* writeLocalSourceArtifact({
+      context: input.runtimeLocalWorkspace.context,
+      sourceId: source.id,
+      artifact: buildLocalSourceArtifact({
             source: {
               ...source,
               sourceHash: manifest.sourceHash,
@@ -1055,30 +1033,22 @@ const persistConnectedGithubOpenApiSource = (input: {
               }),
             },
           }),
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
     });
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: input.runtimeLocalWorkspace.context,
-          state: {
-            version: 1,
-            sources: {
-              [input.sourceId]: {
-                status: "connected",
-                lastError: null,
-                sourceHash: manifest.sourceHash,
-                createdAt: now,
-                updatedAt: now,
-              },
-            },
-            policies: {},
+    yield* writeLocalWorkspaceState({
+      context: input.runtimeLocalWorkspace.context,
+      state: {
+        version: 1,
+        sources: {
+          [input.sourceId]: {
+            status: "connected",
+            lastError: null,
+            sourceHash: manifest.sourceHash,
+            createdAt: now,
+            updatedAt: now,
           },
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+        },
+        policies: {},
+      },
     });
 
     return;
@@ -1087,16 +1057,8 @@ const persistConnectedGithubOpenApiSource = (input: {
 const makeRuntimeLocalWorkspaceState = (workspaceId: WorkspaceId): Effect.Effect<RuntimeLocalWorkspaceState, Error, never> =>
   Effect.gen(function* () {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "executor-workspace-env-"));
-    const context = yield* Effect.tryPromise({
-      try: () => resolveLocalWorkspaceContext({ workspaceRoot }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    const loadedConfig = yield* Effect.tryPromise({
-      try: () => loadLocalExecutorConfig(context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+    const loadedConfig = yield* loadLocalExecutorConfig(context);
     return {
       context,
       installation: {
@@ -1377,34 +1339,21 @@ describe("workspace-execution-environment", () => {
           encodeURIComponent("exec_add_openapi:executor.sources.add:"),
         );
 
-        const loadedConfig = yield* Effect.tryPromise({
-          try: () => loadLocalExecutorConfig(runtimeLocalWorkspace.context),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-        });
+        const loadedConfig = yield* loadLocalExecutorConfig(runtimeLocalWorkspace.context);
         expect(loadedConfig.config?.sources?.[added.id]).toMatchObject({
           kind: "openapi",
           connection: {
             endpoint: `${specServer.baseUrl}/`,
           },
         });
-        const artifact = yield* Effect.tryPromise({
-          try: () =>
-            readLocalSourceArtifact({
-              context: runtimeLocalWorkspace.context,
-              sourceId: added.id,
-            }),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
+        const artifact = yield* readLocalSourceArtifact({
+          context: runtimeLocalWorkspace.context,
+          sourceId: added.id,
         });
         expect(artifact?.documents[0]?.contentText).toContain(
           '"operationId":"repos.getRepo"',
         );
-        const workspaceState = yield* Effect.tryPromise({
-          try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-        });
+        const workspaceState = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
         expect(workspaceState.sources[added.id]?.status).toBe("connected");
 
         const freshEnvironment = yield* resolveEnvironment({
@@ -1511,14 +1460,9 @@ describe("workspace-execution-environment", () => {
         expect(added.auth.kind).toBe("bearer");
         expect(added.auth.token?.providerId).toBe("postgres");
 
-        const artifact = yield* Effect.tryPromise({
-          try: () =>
-            readLocalSourceArtifact({
-              context: runtimeLocalWorkspace.context,
-              sourceId: added.id,
-            }),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
+        const artifact = yield* readLocalSourceArtifact({
+          context: runtimeLocalWorkspace.context,
+          sourceId: added.id,
         });
         expect(artifact?.documents[0]?.contentText).toContain('"__schema"');
         expect(artifact?.schemaBundles.length).toBe(1);
@@ -1526,22 +1470,17 @@ describe("workspace-execution-environment", () => {
           throw new Error(`Missing local source artifact for ${added.id}`);
         }
 
-        yield* Effect.tryPromise({
-          try: () =>
-            writeLocalSourceArtifact({
-              context: runtimeLocalWorkspace.context,
-              sourceId: added.id,
-              artifact: {
-                ...artifact,
-                revision: {
-                  ...artifact.revision,
-                  manifestJson: null,
-                  updatedAt: Date.now(),
-                },
-              },
-            }),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
+        yield* writeLocalSourceArtifact({
+          context: runtimeLocalWorkspace.context,
+          sourceId: added.id,
+          artifact: {
+            ...artifact,
+            revision: {
+              ...artifact.revision,
+              manifestJson: null,
+              updatedAt: Date.now(),
+            },
+          },
         });
 
         const freshEnvironment = yield* resolveEnvironment({

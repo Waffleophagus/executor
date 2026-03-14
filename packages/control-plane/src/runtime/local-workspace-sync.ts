@@ -46,11 +46,7 @@ const pruneLocalWorkspaceState = (input: {
   loadedConfig: LoadedLocalExecutorConfig;
 }): Effect.Effect<LocalWorkspaceState, Error, never> =>
   Effect.gen(function* () {
-    const currentState = yield* Effect.tryPromise({
-      try: () => loadLocalWorkspaceState(input.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const currentState = yield* loadLocalWorkspaceState(input.context);
 
     const configuredSourceIds = new Set(
       Object.keys(input.loadedConfig.config?.sources ?? {}),
@@ -77,14 +73,9 @@ const pruneLocalWorkspaceState = (input: {
       return currentState;
     }
 
-    yield* Effect.tryPromise({
-      try: () =>
-        writeLocalWorkspaceState({
-          context: input.context,
-          state: nextState,
-        }),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
+    yield* writeLocalWorkspaceState({
+      context: input.context,
+      state: nextState,
     });
 
     return nextState;

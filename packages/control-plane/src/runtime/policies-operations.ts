@@ -22,6 +22,7 @@ import {
 } from "./local-runtime-context";
 import {
   loadLocalWorkspaceState,
+  type LocalWorkspaceState,
   writeLocalWorkspaceState,
 } from "./local-workspace-state";
 import {
@@ -59,16 +60,8 @@ const localPolicyIdForConfigKey = (input: {
 export const loadRuntimeLocalWorkspacePolicies = (workspaceId: WorkspaceId) =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* requireRuntimeLocalWorkspace(workspaceId);
-    const loadedConfig = yield* Effect.tryPromise({
-      try: () => loadLocalExecutorConfig(runtimeLocalWorkspace.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
-    const workspaceState = yield* Effect.tryPromise({
-      try: () => loadLocalWorkspaceState(runtimeLocalWorkspace.context),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error(String(cause)),
-    });
+    const loadedConfig = yield* loadLocalExecutorConfig(runtimeLocalWorkspace.context);
+    const workspaceState = yield* loadLocalWorkspaceState(runtimeLocalWorkspace.context);
 
     const configEntries = Object.entries(loadedConfig.config?.policies ?? {});
     const policies = configEntries.map(([configKey, configPolicy]) => {
@@ -135,23 +128,18 @@ const writeLocalPolicyFiles = (input: {
   operation: OperationErrors;
   context: Parameters<typeof writeProjectLocalExecutorConfig>[0]["context"];
   projectConfig: LocalExecutorConfig;
-  workspaceState: Awaited<ReturnType<typeof loadLocalWorkspaceState>>;
+  workspaceState: LocalWorkspaceState;
 }) =>
-  Effect.tryPromise({
-    try: () =>
-      Promise.all([
-        writeProjectLocalExecutorConfig({
-          context: input.context,
-          config: input.projectConfig,
-        }),
-        writeLocalWorkspaceState({
-          context: input.context,
-          state: input.workspaceState,
-        }),
-      ]).then(() => undefined),
-    catch: (cause) =>
-      cause instanceof Error ? cause : new Error(String(cause)),
-  }).pipe(
+  Effect.all([
+    writeProjectLocalExecutorConfig({
+      context: input.context,
+      config: input.projectConfig,
+    }),
+    writeLocalWorkspaceState({
+      context: input.context,
+      state: input.workspaceState,
+    }),
+  ], { discard: true }).pipe(
     Effect.mapError((cause) =>
       input.operation.unknownStorage(
         cause,

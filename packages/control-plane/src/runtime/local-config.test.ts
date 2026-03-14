@@ -43,12 +43,8 @@ describe("local-config", () => {
         ),
       );
 
-      const context = yield* Effect.promise(() =>
-        resolveLocalWorkspaceContext({ workspaceRoot }),
-      );
-      const loaded = yield* Effect.promise(() =>
-        loadLocalExecutorConfig(context),
-      );
+      const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+      const loaded = yield* loadLocalExecutorConfig(context);
 
       expect(loaded.config?.sources?.github?.kind).toBe("openapi");
       expect(loaded.config?.sources?.github?.connection.endpoint).toBe(
@@ -80,16 +76,8 @@ describe("local-config", () => {
         ),
       );
 
-      const context = yield* Effect.promise(() =>
-        resolveLocalWorkspaceContext({ workspaceRoot }),
-      );
-      const failure = yield* Effect.flip(
-        Effect.tryPromise({
-          try: () => loadLocalExecutorConfig(context),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-        }),
-      );
+      const context = yield* resolveLocalWorkspaceContext({ workspaceRoot });
+      const failure = yield* Effect.flip(loadLocalExecutorConfig(context));
 
       expect(failure.message).toContain("Invalid executor config");
       expect(failure.message).toContain("line 5, column 7");
@@ -128,13 +116,11 @@ describe("local-config", () => {
         ),
       );
 
-      const resolvedPath = yield* Effect.promise(() =>
-        resolveHomeConfigPath({
-          platform: "darwin",
-          homeDirectory,
-          env: {},
-        }),
-      );
+      const resolvedPath = yield* resolveHomeConfigPath({
+        platform: "darwin",
+        homeDirectory,
+        env: {},
+      });
 
       expect(resolvedPath).toBe(join(legacyConfigDirectory, "executor.jsonc"));
     }),
