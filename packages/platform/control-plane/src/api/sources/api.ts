@@ -37,7 +37,7 @@ import {
 import {
   ConnectSourcePayloadSchema,
   type ConnectSourcePayload,
-} from "../../runtime/source-adapters";
+} from "../../runtime/sources/source-adapters";
 
 const createSourcePayloadRequiredSchema = Schema.Struct({
   name: TrimmedNonEmptyStringSchema,

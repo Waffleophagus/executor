@@ -29,10 +29,10 @@ import {
   LiveExecutionManagerService,
   provideControlPlaneRuntime,
 } from "./index";
-import { createSourceFromPayload } from "./source-definitions";
-import { decodeSourceCredentialSelectionContent } from "./source-credential-interactions";
-import { persistSource } from "./source-store";
-import { withControlPlaneClient } from "./test-http-client";
+import { createSourceFromPayload } from "./sources/source-definitions";
+import { decodeSourceCredentialSelectionContent } from "./sources/source-credential-interactions";
+import { persistSource } from "./sources/source-store";
+import { withControlPlaneClient } from "./execution/test-http-client";
 
 const makeRuntime = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

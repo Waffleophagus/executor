@@ -12,20 +12,20 @@ import {
   listSources,
   removeSource,
   updateSource,
-} from "../../runtime/sources-operations";
+} from "../../runtime/sources/sources-operations";
 import {
   discoverSourceInspectionTools,
   getSourceInspection,
   getSourceInspectionToolDetail,
-} from "../../runtime/source-inspection";
+} from "../../runtime/sources/source-inspection";
 import {
   completeSourceCredentialSetup,
   getSourceCredentialInteraction,
   submitSourceCredentialInteraction,
-} from "../../runtime/local-operations";
-import { discoverSource } from "../../runtime/source-discovery";
-import { hasSourceAdapterFamily } from "../../runtime/source-adapters";
-import { RuntimeSourceAuthServiceTag } from "../../runtime/source-auth-service";
+} from "../../runtime/local/local-operations";
+import { discoverSource } from "../../runtime/sources/source-discovery";
+import { hasSourceAdapterFamily } from "../../runtime/sources/source-adapters";
+import { RuntimeSourceAuthServiceTag } from "../../runtime/sources/source-auth-service";
 
 import {
   ControlPlaneBadRequestError,

@@ -6,7 +6,7 @@ import {
   listPolicies,
   removePolicy,
   updatePolicy,
-} from "../../runtime/policies-operations";
+} from "../../runtime/policy/policies-operations";
 
 import { ControlPlaneApi } from "../api";
 import { resolveRequestedLocalWorkspace } from "../local-context";

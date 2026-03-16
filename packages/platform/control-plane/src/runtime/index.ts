@@ -8,62 +8,62 @@ import { NodeFileSystem } from "@effect/platform-node";
 import { type ControlPlaneApiRuntimeContext } from "#api";
 import type { LocalInstallation } from "#schema";
 
-import { type ResolveExecutionEnvironment } from "./execution-state";
+import { type ResolveExecutionEnvironment } from "./execution/execution-state";
 import {
   createLiveExecutionManager,
   LiveExecutionManagerService,
-} from "./live-execution";
+} from "./execution/live-execution";
 import {
   createLocalControlPlanePersistence,
   type LocalControlPlanePersistence,
-} from "./local-control-plane-store";
+} from "./local/local-control-plane-store";
 
 import {
   resolveLocalWorkspaceContext,
-} from "./local-config";
+} from "./local/local-config";
 import {
   LocalStorageLive,
   LocalInstallationStore,
   LocalWorkspaceConfigStore,
-} from "./local-storage";
+} from "./local/local-storage";
 import {
   type RuntimeLocalWorkspaceState,
   RuntimeLocalWorkspaceLive,
-} from "./local-runtime-context";
-import { LocalToolRuntimeLoaderLive } from "./local-tools";
-import { synchronizeLocalWorkspaceState } from "./local-workspace-sync";
+} from "./local/local-runtime-context";
+import { LocalToolRuntimeLoaderLive } from "./local/local-tools";
+import { synchronizeLocalWorkspaceState } from "./local/local-workspace-sync";
 import { ControlPlaneStore, type ControlPlaneStoreShape } from "./store";
-import { RuntimeSourceStoreLive } from "./source-store";
-import { RuntimeSourceCatalogStoreLive } from "./source-catalog-runtime";
-import { RuntimeSourceAuthMaterialLive } from "./source-auth-material";
-import { RuntimeSourceCatalogSyncLive } from "./source-catalog-sync";
+import { RuntimeSourceStoreLive } from "./sources/source-store";
+import { RuntimeSourceCatalogStoreLive } from "./catalog/source-catalog-runtime";
+import { RuntimeSourceAuthMaterialLive } from "./auth/source-auth-material";
+import { RuntimeSourceCatalogSyncLive } from "./catalog/source-catalog-sync";
 import {
   RuntimeSourceAuthServiceLive,
-} from "./source-auth-service";
-import type { ResolveSecretMaterial } from "./secret-material-providers";
-import { SecretMaterialLive } from "./secret-material-providers";
+} from "./sources/source-auth-service";
+import type { ResolveSecretMaterial } from "./local/secret-material-providers";
+import { SecretMaterialLive } from "./local/secret-material-providers";
 import {
   RuntimeExecutionResolverLive,
-} from "./workspace-execution-environment";
+} from "./execution/workspace-execution-environment";
 
-export * from "./execution-state";
-export * from "./executor-tools";
-export * from "./live-execution";
-export * from "./local-config";
-export * from "./local-installation";
-export * from "./local-storage";
-export * from "./local-source-artifacts";
-export * from "./local-tools";
-export * from "./schema-type-signature";
-export * from "./source-auth-service";
-export * from "./secret-material-providers";
-export * from "./source-credential-interactions";
-export * from "./source-adapters/mcp";
+export * from "./execution/execution-state";
+export * from "./sources/executor-tools";
+export * from "./execution/live-execution";
+export * from "./local/local-config";
+export * from "./local/local-installation";
+export * from "./local/local-storage";
+export * from "./local/local-source-artifacts";
+export * from "./local/local-tools";
+export * from "./catalog/schema-type-signature";
+export * from "./sources/source-auth-service";
+export * from "./local/secret-material-providers";
+export * from "./sources/source-credential-interactions";
+export * from "./sources/source-adapters/mcp";
 export * from "./store";
-export * from "./workspace-execution-environment";
-export * from "./source-inspection";
-export * from "./source-discovery";
-export * from "./execution-service";
+export * from "./execution/workspace-execution-environment";
+export * from "./sources/source-inspection";
+export * from "./sources/source-discovery";
+export * from "./execution/execution-service";
 
 export type RuntimeControlPlaneOptions = {
   executionResolver?: ResolveExecutionEnvironment;

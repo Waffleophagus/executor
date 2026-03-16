@@ -7,8 +7,8 @@ import * as Option from "effect/Option";
 import { SecretMaterialIdSchema } from "#schema";
 import {
   getLocalInstallation,
-} from "../../runtime/local-operations";
-import { requireRuntimeLocalWorkspace } from "../../runtime/local-runtime-context";
+} from "../../runtime/local/local-operations";
+import { requireRuntimeLocalWorkspace } from "../../runtime/local/local-runtime-context";
 import {
   createDefaultSecretMaterialDeleter,
   createDefaultSecretMaterialStorer,
@@ -18,8 +18,8 @@ import {
   LOCAL_SECRET_PROVIDER_ID,
   parseSecretStoreProviderId,
   resolveDefaultSecretStoreProviderId,
-} from "../../runtime/secret-material-providers";
-import { RuntimeSourceStoreService } from "../../runtime/source-store";
+} from "../../runtime/local/secret-material-providers";
+import { RuntimeSourceStoreService } from "../../runtime/sources/source-store";
 import { ControlPlaneStore } from "../../runtime/store";
 import type {
   CreateSecretResult,
