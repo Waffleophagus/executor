@@ -18,7 +18,7 @@ import {
   decodeCatalogSnapshotV1,
   projectCatalogForAgentSdk,
   type ProjectedCatalog,
-} from "../../ir/catalog";
+} from "@executor/ir/catalog";
 import type {
   Capability,
   CatalogSnapshotV1,
@@ -29,7 +29,7 @@ import type {
   McpExecutable,
   ShapeSymbol,
   Symbol as IrSymbol,
-} from "../../ir/model";
+} from "@executor/ir/model";
 import { LocalSourceArtifactMissingError } from "../local/local-errors";
 import {
   createCatalogTypeProjector,

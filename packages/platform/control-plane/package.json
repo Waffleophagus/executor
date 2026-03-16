@@ -24,6 +24,7 @@
 
     "@executor/codemode-core": "workspace:*",
     "@executor/codemode-google-discovery": "workspace:*",
+    "@executor/ir": "workspace:*",
     "@executor/codemode-mcp": "workspace:*",
     "@executor/codemode-openapi": "workspace:*",
     "@executor/runtime-deno-subprocess": "workspace:*",

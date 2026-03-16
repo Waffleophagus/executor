@@ -15,7 +15,7 @@ import type { Source } from "#schema";
 
 import {
   createCatalogSnapshotV1FromFragments,
-} from "../../ir/catalog";
+} from "@executor/ir/catalog";
 import {
   CapabilityIdSchema,
   DiagnosticIdSchema,
@@ -31,7 +31,7 @@ import {
   ScopeIdSchema,
   SecuritySchemeSymbolIdSchema,
   ShapeSymbolIdSchema,
-} from "../../ir/ids";
+} from "@executor/ir/ids";
 import type {
   AuthRequirement,
   Capability,
@@ -56,7 +56,7 @@ import type {
   ShapeSymbol,
   SourceKind,
   SourceDocument,
-} from "../../ir/model";
+} from "@executor/ir/model";
 import type { GraphqlToolProviderData } from "../sources/graphql-tools";
 import { namespaceFromSourceName } from "../sources/source-names";
 

@@ -6,8 +6,8 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
-import { projectCatalogForAgentSdk } from "../../ir/catalog";
-import type { CatalogSnapshotV1 } from "../../ir/model";
+import { projectCatalogForAgentSdk } from "@executor/ir/catalog";
+import type { CatalogSnapshotV1 } from "@executor/ir/model";
 import {
   createCatalogTypeProjector,
   formatPropertyKey,

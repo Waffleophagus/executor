@@ -22,7 +22,7 @@ import type {
   ToolInput,
   ToolPath,
 } from "@executor/codemode-core";
-import { buildInvocationPlan, type InvocationPlan } from "../../ir/catalog";
+import { buildInvocationPlan, type InvocationPlan } from "@executor/ir/catalog";
 import type {
   CatalogV1,
   Capability,
@@ -32,7 +32,7 @@ import type {
   McpExecutable,
   ParameterSymbol,
   Scope,
-} from "../../ir/model";
+} from "@executor/ir/model";
 import type { LoadedSourceCatalogToolIndexEntry } from "../catalog/source-catalog-runtime";
 import type { ResolvedSourceAuthMaterial } from "../auth/source-auth-material";
 

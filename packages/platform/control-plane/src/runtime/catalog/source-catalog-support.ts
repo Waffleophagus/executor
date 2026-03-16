@@ -1,10 +1,10 @@
 import { sha256Hex } from "@executor/codemode-core";
-import { createCatalogSnapshotV1FromFragments } from "../../ir/catalog";
+import { createCatalogSnapshotV1FromFragments } from "@executor/ir/catalog";
 import type {
   CatalogFragmentV1,
   CatalogSnapshotV1,
   ImportMetadata,
-} from "../../ir/model";
+} from "@executor/ir/model";
 
 export const normalizeSearchText = (
   ...parts: ReadonlyArray<string | null | undefined>

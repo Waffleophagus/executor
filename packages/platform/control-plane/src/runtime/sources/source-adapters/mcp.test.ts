@@ -19,8 +19,8 @@ import type {
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
-import { projectCatalogForAgentSdk } from "../../../ir/catalog";
-import type { CatalogSnapshotV1 } from "../../../ir/model";
+import { projectCatalogForAgentSdk } from "@executor/ir/catalog";
+import type { CatalogSnapshotV1 } from "@executor/ir/model";
 import { createCatalogTypeProjector, projectedCatalogTypeRoots } from "../../catalog/catalog-typescript";
 import { invokeIrTool } from "../../execution/ir-execution";
 import {

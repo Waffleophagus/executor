@@ -228,6 +228,20 @@
         "vitest": "catalog:",
       },
     },
+    "packages/kernel/ir": {
+      "name": "@executor/ir",
+      "version": "0.0.0",
+      "dependencies": {
+        "@executor/codemode-core": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/kernel/runtime-deno-subprocess": {
       "name": "@executor/runtime-deno-subprocess",
       "version": "0.0.0",
@@ -279,6 +293,7 @@
         "@executor/codemode-google-discovery": "workspace:*",
         "@executor/codemode-mcp": "workspace:*",
         "@executor/codemode-openapi": "workspace:*",
+        "@executor/ir": "workspace:*",
         "@executor/runtime-deno-subprocess": "workspace:*",
         "@executor/runtime-quickjs": "workspace:*",
         "@executor/runtime-ses": "workspace:*",
@@ -539,6 +554,8 @@
     "@executor/docs": ["@executor/docs@workspace:apps/docs"],
 
     "@executor/executor-mcp": ["@executor/executor-mcp@workspace:packages/hosts/mcp"],
+
+    "@executor/ir": ["@executor/ir@workspace:packages/kernel/ir"],
 
     "@executor/kitchen-sink": ["@executor/kitchen-sink@workspace:packages/dev/kitchen-sink"],
 

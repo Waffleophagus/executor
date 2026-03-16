@@ -13,7 +13,7 @@ import {
 import {
   createCatalogSnapshotV1,
   createEmptyCatalogV1,
-} from "../../ir/catalog";
+} from "@executor/ir/catalog";
 import {
   CapabilityIdSchema,
   DocumentIdSchema,
@@ -22,8 +22,8 @@ import {
   ResponseSetIdSchema,
   ScopeIdSchema,
   ShapeSymbolIdSchema,
-} from "../../ir/ids";
-import type { CatalogV1, GraphQLExecutable, ProvenanceRef } from "../../ir/model";
+} from "@executor/ir/ids";
+import type { CatalogV1, GraphQLExecutable, ProvenanceRef } from "@executor/ir/model";
 import { syncWorkspaceSourceTypeDeclarationsNode } from "./source-type-declarations";
 
 const put = <K extends string, V>(record: Record<K, V>, key: K, value: V) => {

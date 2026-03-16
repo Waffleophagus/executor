@@ -13,13 +13,13 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { decodeCatalogSnapshotV1 } from "../../ir/catalog";
+import { decodeCatalogSnapshotV1 } from "@executor/ir/catalog";
 import {
   CatalogSnapshotV1Schema,
   type CatalogSnapshotV1,
   type NativeBlob,
   type SourceDocument,
-} from "../../ir/model";
+} from "@executor/ir/model";
 import {
   contentHash,
   snapshotFromSourceCatalogSyncResult,

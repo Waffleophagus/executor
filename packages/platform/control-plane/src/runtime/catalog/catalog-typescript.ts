@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
-import type { ProjectedCatalog } from "../../ir/catalog";
-import type { ShapeSymbolId } from "../../ir/ids";
-import type { CatalogV1, ShapeNode, ShapeSymbol } from "../../ir/model";
+import type { ProjectedCatalog } from "@executor/ir/catalog";
+import type { ShapeSymbolId } from "@executor/ir/ids";
+import type { CatalogV1, ShapeNode, ShapeSymbol } from "@executor/ir/model";
 
 export type CatalogTypeRoot = {
   readonly shapeId: ShapeSymbolId;

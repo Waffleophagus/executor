@@ -1,3 +1,1 @@
-export * from "./ids";
-export * from "./model";
-export * from "./catalog";
+export * from "@executor/ir";

@@ -35,8 +35,8 @@ import {
 import * as Effect from "effect/Effect";
 import { Schema } from "effect";
 
-import { projectCatalogForAgentSdk } from "../../ir/catalog";
-import type { CatalogSnapshotV1 } from "../../ir/model";
+import { projectCatalogForAgentSdk } from "@executor/ir/catalog";
+import type { CatalogSnapshotV1 } from "@executor/ir/model";
 import { createCatalogTypeProjector, projectedCatalogTypeRoots } from "../catalog/catalog-typescript";
 import {
   buildGraphqlToolPresentation,

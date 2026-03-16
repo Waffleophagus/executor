@@ -1,6 +1,6 @@
 # IR v1
 
-`@executor/control-plane/ir` is the greenfield semantic center for imported sources.
+`@executor/ir` is the greenfield semantic center for imported sources.
 
 ## Boundary
 
@@ -21,7 +21,8 @@ The existing runtime-specific compiled payload blobs are no longer the target se
 
 Use either:
 
-- `@executor/control-plane/ir`
+- `@executor/ir`
+- `@executor/control-plane/ir` as a compatibility shim
 - `import { ir } from "@executor/control-plane"`
 
 ## Guarantees
