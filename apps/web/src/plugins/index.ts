@@ -83,7 +83,8 @@ const isGoogleDiscoverySource = (kind: string): boolean =>
   || kind === "google-discovery";
 
 export const getSourceFrontendIconUrl = (source: Source) =>
-  (isGoogleDiscoverySource(source.kind)
+  source.iconUrl
+  ?? (isGoogleDiscoverySource(source.kind)
     ? getGoogleDiscoveryIconUrl(source)
     : null)
   ?? getFallbackSourceFaviconUrl(source);

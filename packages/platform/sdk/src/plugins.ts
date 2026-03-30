@@ -294,6 +294,7 @@ export type ExecutorSourcePluginDefinition<
     toConfig: (input: {
       source: ExecutorSource;
       stored: TStored;
+      configSource: ExecutorScopeConfigSource | null;
     }) => TSourceConfig;
     remove?: (input: {
       source: ExecutorSource;
@@ -731,9 +732,13 @@ const createExecutorSourcePluginApi = <
         );
       }
 
+      const scopeConfigStore = yield* ScopeConfigStore;
+      const loadedConfig = yield* scopeConfigStore.load();
+
       return definition.source.toConfig({
         source,
         stored,
+        configSource: loadedConfig.config?.sources?.[source.id] ?? null,
       });
     }),
   createSource: (input) =>
