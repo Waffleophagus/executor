@@ -730,11 +730,16 @@ export const mcpSdkPlugin = (
         }),
     },
     scopeConfig: {
-      toConfigSource: ({ source, stored }) =>
+      toConfigSource: ({ source, stored, configInput }) =>
         pluginScopeConfigSourceFromConfig({
           source,
           config: stored,
-          iconUrl: source.iconUrl ?? null,
+          iconUrl:
+            configInput && typeof configInput === "object" && "iconUrl" in configInput
+              ? (typeof configInput.iconUrl === "string"
+                  ? configInput.iconUrl.trim() || null
+                  : null)
+              : null,
         }),
       recoverStored: ({ config }) =>
         mcpStoredSourceDataFromLocalConfig(config),
