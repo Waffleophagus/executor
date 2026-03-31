@@ -4,10 +4,7 @@
   "type": "module",
   "version": "0.0.0",
   "exports": {
-    ".": "./src/index.ts",
-    "./catalog": "./src/catalog.ts",
-    "./ids": "./src/ids.ts",
-    "./model": "./src/model.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
@@ -15,7 +12,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@executor/codemode-core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
