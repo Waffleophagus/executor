@@ -32,3 +32,6 @@ export {
 
 // Provider
 export { ExecutorProvider } from "./provider";
+
+// Plugin contracts
+export type { SourcePlugin } from "./source-plugin";

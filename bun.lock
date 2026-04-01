@@ -160,11 +160,28 @@
         "yaml": "^2.7.1",
       },
       "devDependencies": {
+        "@effect-atom/atom-react": "^0.5.0",
         "@effect/vitest": "catalog:",
+        "@executor/api": "workspace:*",
+        "@executor/react": "workspace:*",
         "@types/node": "catalog:",
+        "@types/react": "^19.1.0",
         "bun-types": "catalog:",
+        "react": "^19.1.0",
         "vitest": "catalog:",
       },
+      "peerDependencies": {
+        "@effect-atom/atom-react": "^0.5.0",
+        "@executor/api": "workspace:*",
+        "@executor/react": "workspace:*",
+        "react": "^19.1.0",
+      },
+      "optionalPeers": [
+        "@effect-atom/atom-react",
+        "@executor/api",
+        "@executor/react",
+        "react",
+      ],
     },
   },
   "catalog": {

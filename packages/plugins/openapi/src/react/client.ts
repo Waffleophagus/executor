@@ -1,20 +1,20 @@
 import { AtomHttpApi } from "@effect-atom/atom-react";
 import { FetchHttpClient } from "@effect/platform";
-import { ExecutorApi } from "@executor/api";
-
-import { getBaseUrl } from "./base-url";
+import { addGroup } from "@executor/api";
+import { getBaseUrl } from "@executor/react";
+import { OpenApiGroup } from "../api/group";
 
 // ---------------------------------------------------------------------------
-// Core API client — tools + secrets
+// OpenAPI-aware client — core routes + openapi routes
 // ---------------------------------------------------------------------------
 
-class ExecutorApiClient extends AtomHttpApi.Tag<ExecutorApiClient>()(
-  "ExecutorApiClient",
+const OpenApiApi = addGroup(OpenApiGroup);
+
+export const OpenApiClient = AtomHttpApi.Tag<"OpenApiClient">()(
+  "OpenApiClient",
   {
-    api: ExecutorApi,
+    api: OpenApiApi,
     httpClient: FetchHttpClient.layer,
     baseUrl: getBaseUrl(),
   },
-) {}
-
-export { ExecutorApiClient };
+);
