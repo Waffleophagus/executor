@@ -1,7 +1,7 @@
 import type { ScopeId, ToolId, SecretId } from "@executor/sdk";
 import { ScopeId as ScopeIdSchema } from "@executor/sdk";
 
-import { getExecutorClient } from "./client";
+import { ExecutorApiClient } from "./client";
 
 // ---------------------------------------------------------------------------
 // Query atoms — typed, cached, reactive
@@ -10,25 +10,25 @@ import { getExecutorClient } from "./client";
 const DEFAULT_SCOPE = ScopeIdSchema.make("default");
 
 export const toolsAtom = (scopeId: ScopeId = DEFAULT_SCOPE) =>
-  getExecutorClient().query("tools", "list", {
+  ExecutorApiClient.query("tools", "list", {
     path: { scopeId },
     timeToLive: "30 seconds",
   });
 
 export const toolSchemaAtom = (scopeId: ScopeId, toolId: ToolId) =>
-  getExecutorClient().query("tools", "schema", {
+  ExecutorApiClient.query("tools", "schema", {
     path: { scopeId, toolId },
     timeToLive: "1 minute",
   });
 
 export const secretsAtom = (scopeId: ScopeId = DEFAULT_SCOPE) =>
-  getExecutorClient().query("secrets", "list", {
+  ExecutorApiClient.query("secrets", "list", {
     path: { scopeId },
     timeToLive: "30 seconds",
   });
 
 export const secretStatusAtom = (scopeId: ScopeId, secretId: SecretId) =>
-  getExecutorClient().query("secrets", "status", {
+  ExecutorApiClient.query("secrets", "status", {
     path: { scopeId, secretId },
     timeToLive: "15 seconds",
   });
@@ -37,8 +37,8 @@ export const secretStatusAtom = (scopeId: ScopeId, secretId: SecretId) =>
 // Mutation atoms
 // ---------------------------------------------------------------------------
 
-export const invokeTool = getExecutorClient().mutation("tools", "invoke");
+export const invokeTool = ExecutorApiClient.mutation("tools", "invoke");
 
-export const setSecret = getExecutorClient().mutation("secrets", "set");
+export const setSecret = ExecutorApiClient.mutation("secrets", "set");
 
-export const removeSecret = getExecutorClient().mutation("secrets", "remove");
+export const removeSecret = ExecutorApiClient.mutation("secrets", "remove");

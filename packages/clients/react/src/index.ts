@@ -17,7 +17,7 @@ export {
 export { getBaseUrl, setBaseUrl } from "./base-url";
 
 // Typed API client
-export { getExecutorClient } from "./client";
+export { ExecutorApiClient } from "./client";
 
 // Query & mutation atoms
 export {

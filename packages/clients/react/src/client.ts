@@ -18,6 +18,3 @@ class ExecutorApiClient extends AtomHttpApi.Tag<ExecutorApiClient>()(
 ) {}
 
 export { ExecutorApiClient };
-
-export const getExecutorClient = (): typeof ExecutorApiClient =>
-  ExecutorApiClient;
