@@ -63,6 +63,7 @@ export {
   tool,
   type MemoryToolDefinition,
   type MemoryToolContext,
+  type MemoryToolSdkAccess,
   type MemoryPluginExtension,
 } from "./plugins/memory";
 

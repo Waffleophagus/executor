@@ -1,4 +1,8 @@
 import { Effect, Match, Option } from "effect";
+import {
+  HttpClient,
+  HttpClientRequest,
+} from "@effect/platform";
 
 import { OpenApiInvocationError } from "./errors";
 import {
@@ -53,6 +57,7 @@ const resolvePath = Effect.fn("OpenApi.resolvePath")(function* (
 ) {
   let resolved = pathTemplate;
 
+  // Resolve declared path parameters
   for (const param of parameters) {
     if (param.location !== "path") continue;
     const value = readParamValue(args, param);
@@ -72,6 +77,22 @@ const resolvePath = Effect.fn("OpenApi.resolvePath")(function* (
     );
   }
 
+  // Resolve remaining placeholders from raw args (handles specs that
+  // don't explicitly list path parameters)
+  const remaining = [...resolved.matchAll(/\{([^{}]+)\}/g)]
+    .map((m) => m[1])
+    .filter((v): v is string => typeof v === "string");
+
+  for (const name of remaining) {
+    const value = args[name];
+    if (value !== undefined && value !== null) {
+      resolved = resolved.replaceAll(
+        `{${name}}`,
+        encodeURIComponent(String(value)),
+      );
+    }
+  }
+
   const unresolved = [...resolved.matchAll(/\{([^{}]+)\}/g)]
     .map((m) => m[1])
     .filter((v): v is string => typeof v === "string");
@@ -88,54 +109,41 @@ const resolvePath = Effect.fn("OpenApi.resolvePath")(function* (
 });
 
 // ---------------------------------------------------------------------------
-// URL construction
-// ---------------------------------------------------------------------------
-
-const buildUrl = (baseUrl: string, resolvedPath: string): URL => {
-  try {
-    return new URL(resolvedPath);
-  } catch {
-    const base = new URL(baseUrl);
-    const basePath =
-      base.pathname === "/" ? "" : base.pathname.replace(/\/$/, "");
-    const pathPart = resolvedPath.startsWith("/")
-      ? resolvedPath
-      : `/${resolvedPath}`;
-    base.pathname = `${basePath}${pathPart}`.replace(/\/{2,}/g, "/");
-    base.search = "";
-    base.hash = "";
-    return base;
-  }
-};
-
-// ---------------------------------------------------------------------------
 // Auth application
 // ---------------------------------------------------------------------------
 
-const applyAuth = (headers: Headers, url: URL, auth: AuthConfig): void =>
+const applyAuth = (
+  request: HttpClientRequest.HttpClientRequest,
+  auth: AuthConfig,
+): HttpClientRequest.HttpClientRequest =>
   Match.valueTags(auth, {
-    NoAuth: () => {},
-    BearerAuth: ({ token, headerName, prefix }) => {
-      headers.set(headerName, `${prefix}${token}`);
-    },
+    NoAuth: () => request,
+    BearerAuth: ({ token, headerName, prefix }) =>
+      HttpClientRequest.setHeader(request, headerName, `${prefix}${token}`),
     ApiKeyAuth: ({ name, value, in: location }) => {
       if (location === "header") {
-        headers.set(name, value);
-      } else if (location === "query") {
-        url.searchParams.set(name, value);
-      } else {
-        const existing = headers.get("cookie");
-        const cookie = `${name}=${encodeURIComponent(value)}`;
-        headers.set("cookie", existing ? `${existing}; ${cookie}` : cookie);
+        return HttpClientRequest.setHeader(request, name, value);
       }
+      if (location === "query") {
+        return HttpClientRequest.setUrlParam(request, name, value);
+      }
+      // cookie
+      const existing =
+        request.headers["cookie"] ?? "";
+      const cookie = `${name}=${encodeURIComponent(value)}`;
+      return HttpClientRequest.setHeader(
+        request,
+        "cookie",
+        existing ? `${existing}; ${cookie}` : cookie,
+      );
     },
   });
 
 // ---------------------------------------------------------------------------
-// Response decoding
+// Response helpers
 // ---------------------------------------------------------------------------
 
-const isJsonContentType = (ct: string | null): boolean => {
+const isJsonContentType = (ct: string | null | undefined): boolean => {
   if (!ct) return false;
   const normalized = ct.split(";")[0]?.trim().toLowerCase() ?? "";
   return (
@@ -145,50 +153,39 @@ const isJsonContentType = (ct: string | null): boolean => {
   );
 };
 
-const decodeResponse = (
-  response: Response,
-): Effect.Effect<unknown, OpenApiInvocationError> =>
-  Effect.tryPromise({
-    try: async () => {
-      if (response.status === 204) return null;
-      if (isJsonContentType(response.headers.get("content-type"))) {
-        return response.json();
-      }
-      return response.text();
-    },
-    catch: (error) =>
-      new OpenApiInvocationError({
-        message: `Failed to decode response body: ${error instanceof Error ? error.message : String(error)}`,
-        statusCode: Option.some(response.status),
-        error,
-      }),
-  });
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Invoke an extracted OpenAPI operation */
+/** Invoke an extracted OpenAPI operation. Requires HttpClient in the context. */
 export const invoke = Effect.fn("OpenApi.invoke")(function* (
   operation: ExtractedOperation,
   args: Record<string, unknown>,
   config: InvocationConfig,
 ) {
+  const client = yield* HttpClient.HttpClient;
+
   const resolvedPath = yield* resolvePath(
     operation.pathTemplate,
     args,
     operation.parameters,
   );
 
-  const url = buildUrl(config.baseUrl, resolvedPath);
-  const headers = new Headers();
+  const path = resolvedPath.startsWith("/") ? resolvedPath : `/${resolvedPath}`;
+
+  // Build the base request — use just the path; baseUrl is applied to the client
+  let request = HttpClientRequest.make(operation.method.toUpperCase() as "GET")(path);
 
   // Query parameters
   for (const param of operation.parameters) {
     if (param.location !== "query") continue;
     const value = readParamValue(args, param);
     if (value === undefined || value === null) continue;
-    url.searchParams.set(param.name, String(value));
+    request = HttpClientRequest.setUrlParam(
+      request,
+      param.name,
+      String(value),
+    );
   }
 
   // Header parameters
@@ -196,53 +193,61 @@ export const invoke = Effect.fn("OpenApi.invoke")(function* (
     if (param.location !== "header") continue;
     const value = readParamValue(args, param);
     if (value === undefined || value === null) continue;
-    headers.set(param.name, String(value));
+    request = HttpClientRequest.setHeader(
+      request,
+      param.name,
+      String(value),
+    );
   }
 
   // Request body
-  let body: string | undefined;
   if (Option.isSome(operation.requestBody)) {
     const rb = operation.requestBody.value;
     const bodyValue = args.body ?? args.input;
     if (bodyValue !== undefined) {
-      headers.set("content-type", rb.contentType);
-      // eslint-disable-next-line effect/preferSchemaOverJson -- serializing arbitrary user-provided body for HTTP transport
-      body = isJsonContentType(rb.contentType)
-        ? JSON.stringify(bodyValue)
-        : String(bodyValue);
+      if (isJsonContentType(rb.contentType)) {
+        request = HttpClientRequest.bodyUnsafeJson(request, bodyValue);
+      } else {
+        request = HttpClientRequest.bodyText(request, String(bodyValue), rb.contentType);
+      }
     }
   }
 
   // Auth
-  applyAuth(headers, url, config.auth);
+  request = applyAuth(request, config.auth);
 
-  // Execute request
-  const response = yield* Effect.tryPromise({
-    try: () =>
-      fetch(url.toString(), {
-        method: operation.method.toUpperCase(),
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      }),
-    catch: (error) =>
-      new OpenApiInvocationError({
-        message: `HTTP request failed: ${error instanceof Error ? error.message : String(error)}`,
-        statusCode: Option.none(),
-        error,
-      }),
-  });
+  // Execute
+  const response = yield* client.execute(request).pipe(
+    Effect.mapError(
+      (err) =>
+        new OpenApiInvocationError({
+          message: `HTTP request failed: ${err.message}`,
+          statusCode: Option.none(),
+          error: err,
+        }),
+    ),
+  );
 
-  const responseBody = yield* decodeResponse(response);
+  const status = response.status;
+  const responseHeaders: Record<string, string> = { ...response.headers };
 
-  const responseHeaders: Record<string, string> = {};
-  response.headers.forEach((value, key) => {
-    responseHeaders[key] = value;
-  });
+  // Decode body
+  const contentType = response.headers["content-type"] ?? null;
+  const responseBody: unknown =
+    status === 204
+      ? null
+      : isJsonContentType(contentType)
+        ? yield* response.json.pipe(
+            Effect.catchAll(() => response.text),
+          )
+        : yield* response.text;
+
+  const ok = status >= 200 && status < 300;
 
   return new InvocationResult({
-    status: response.status,
+    status,
     headers: responseHeaders,
-    data: response.ok ? responseBody : null,
-    error: response.ok ? null : responseBody,
+    data: ok ? responseBody : null,
+    error: ok ? null : responseBody,
   });
 });

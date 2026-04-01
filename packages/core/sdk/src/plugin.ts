@@ -1,17 +1,19 @@
 import type { Effect } from "effect";
 
-import type { ToolRegistration, ToolRegistry } from "./tools";
+import type { ToolRegistry } from "./tools";
 import type { SecretStore } from "./secrets";
-import type { ScopeId } from "./ids";
+import type { PolicyEngine } from "./policies";
+import type { Scope } from "./scope";
 
 // ---------------------------------------------------------------------------
 // Plugin context — what the SDK gives a plugin when it starts
 // ---------------------------------------------------------------------------
 
 export interface PluginContext {
-  readonly scopeId: ScopeId;
+  readonly scope: Scope;
   readonly tools: Context.Tag.Service<typeof ToolRegistry>;
   readonly secrets: Context.Tag.Service<typeof SecretStore>;
+  readonly policies: Context.Tag.Service<typeof PolicyEngine>;
 }
 
 // ---------------------------------------------------------------------------

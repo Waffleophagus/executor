@@ -1,7 +1,9 @@
 import { Effect, JSONSchema, Schema } from "effect";
 
+import type { SecretId } from "../ids";
 import { ToolId } from "../ids";
 import { ToolInvocationError } from "../errors";
+import type { Secret } from "../secrets";
 import {
   ToolInvocationResult,
   type ToolRegistration,
@@ -17,13 +19,6 @@ import { definePlugin, type PluginContext } from "../plugin";
 // In-memory tool definition — typed via Schema
 // ---------------------------------------------------------------------------
 
-/**
- * A tool that uses Effect Schema for typed input/output.
- *
- * - `inputSchema` defines and validates the args the tool receives
- * - `outputSchema` optionally describes the output shape
- * - `handler` receives the parsed/typed args
- */
 export interface MemoryToolDefinition<
   TInput = unknown,
   TOutput = unknown,
@@ -36,23 +31,35 @@ export interface MemoryToolDefinition<
   readonly handler: MemoryToolHandler<TInput>;
 }
 
-/**
- * A handler is either:
- * - A plain function: `(args: TInput) => TOutput`
- * - An Effect function (can use elicitation): `(args: TInput, ctx) => Effect<TOutput, ...>`
- */
 export type MemoryToolHandler<TInput> =
   | ((args: TInput) => unknown)
   | ((
       args: TInput,
       ctx: MemoryToolContext,
-    ) => Effect.Effect<unknown, ElicitationDeclinedError>);
+    ) => Effect.Effect<unknown, unknown>);
 
 export interface MemoryToolContext {
   /** Request input from the user. Returns user data or fails if declined. */
   readonly elicit: (
     request: ElicitationRequest,
   ) => Effect.Effect<Record<string, unknown>, ElicitationDeclinedError>;
+
+  /** Access to the SDK services */
+  readonly sdk: MemoryToolSdkAccess;
+}
+
+/** SDK services available to in-memory tool handlers */
+export interface MemoryToolSdkAccess {
+  readonly secrets: {
+    readonly list: () => Effect.Effect<readonly Secret[]>;
+    readonly resolve: (secretId: SecretId) => Effect.Effect<string, unknown>;
+    readonly store: (input: {
+      readonly name: string;
+      readonly value: string;
+      readonly purpose?: string;
+    }) => Effect.Effect<Secret>;
+    readonly remove: (secretId: SecretId) => Effect.Effect<boolean, unknown>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +80,7 @@ export interface MemoryPluginExtension {
 const toRegistration = (
   namespace: string,
   def: MemoryToolDefinition,
+  pluginCtx: PluginContext,
 ): ToolRegistration => {
   const id = ToolId.make(`${namespace}.${def.name}`);
   const decode = Schema.decodeUnknownSync(def.inputSchema);
@@ -89,7 +97,6 @@ const toRegistration = (
       : undefined,
     mayElicit: isEffectHandler,
     invoke: (args, options?: InvokeOptions) => {
-      // Validate + decode input
       const parsed = Effect.try({
         try: () => decode(args),
         catch: (err) =>
@@ -101,7 +108,6 @@ const toRegistration = (
       });
 
       if (!isEffectHandler) {
-        // Plain handler
         return parsed.pipe(
           Effect.flatMap((input) =>
             Effect.try({
@@ -122,8 +128,20 @@ const toRegistration = (
         );
       }
 
-      // Effect handler — build context with elicit
+      // Effect handler — build context with elicit + sdk access
       const ctx: MemoryToolContext = {
+        sdk: {
+          secrets: {
+            list: () => pluginCtx.secrets.list(pluginCtx.scope.id),
+            resolve: (secretId) => pluginCtx.secrets.resolve(secretId),
+            store: (input) =>
+              pluginCtx.secrets.store({
+                ...input,
+                scopeId: pluginCtx.scope.id,
+              }),
+            remove: (secretId) => pluginCtx.secrets.remove(secretId),
+          },
+        },
         elicit: (request) =>
           Effect.gen(function* () {
             const handler = options?.onElicitation;
@@ -151,12 +169,35 @@ const toRegistration = (
       const effectHandler = def.handler as (
         args: unknown,
         ctx: MemoryToolContext,
-      ) => Effect.Effect<unknown, ElicitationDeclinedError>;
+      ) => Effect.Effect<unknown, unknown>;
 
       return parsed.pipe(
         Effect.flatMap((input) => effectHandler(input, ctx)),
         Effect.map(
           (data) => new ToolInvocationResult({ data, error: null }),
+        ),
+        Effect.catchAll(
+          (err): Effect.Effect<
+            ToolInvocationResult,
+            ToolInvocationError | ElicitationDeclinedError
+          > => {
+            if (
+              err != null &&
+              typeof err === "object" &&
+              "_tag" in err &&
+              (err as { _tag: string })._tag === "ElicitationDeclinedError"
+            ) {
+              return Effect.fail(err as ElicitationDeclinedError);
+            }
+            return Effect.fail(
+              new ToolInvocationError({
+                toolId: id,
+                message:
+                  err instanceof Error ? err.message : String(err),
+                cause: err,
+              }),
+            );
+          },
         ),
       );
     },
@@ -187,14 +228,16 @@ export const memoryPlugin = (config: {
     key: "memory",
     init: (ctx: PluginContext) =>
       Effect.gen(function* () {
-        const registrations = config.tools.map((t) => toRegistration(ns, t));
+        const registrations = config.tools.map((t) =>
+          toRegistration(ns, t, ctx),
+        );
         yield* ctx.tools.register(registrations);
 
         return {
           extension: {
-            addTools: (newTools: readonly MemoryToolDefinition[]) =>
+            addTools: (newTools: readonly MemoryToolDefinition<any, any>[]) =>
               ctx.tools.register(
-                newTools.map((t) => toRegistration(ns, t)),
+                newTools.map((t) => toRegistration(ns, t, ctx)),
               ),
           },
           close: () =>

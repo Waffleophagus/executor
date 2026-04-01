@@ -3,9 +3,7 @@ import { Effect } from "effect";
 import { ScopeId, ToolId, SecretId, PolicyId } from "./ids";
 import {
   ToolNotFoundError,
-  ToolInvocationError,
   SecretNotFoundError,
-  PolicyDeniedError,
 } from "./errors";
 import type { ToolRegistration, InvokeOptions } from "./tools";
 import type { Secret } from "./secrets";

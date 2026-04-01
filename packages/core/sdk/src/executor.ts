@@ -1,6 +1,6 @@
 import { Context, Effect } from "effect";
 
-import type { ScopeId, ToolId, SecretId, PolicyId } from "./ids";
+import type { ToolId, SecretId, PolicyId } from "./ids";
 import type { Secret, SecretStore } from "./secrets";
 import type {
   ToolMetadata,
@@ -113,9 +113,10 @@ export const createExecutor = <
 
     for (const plugin of plugins) {
       const handle = yield* plugin.init({
-        scopeId: scope.id,
+        scope,
         tools,
         secrets,
+        policies,
       });
       handles.set(plugin.key, handle);
       extensions[plugin.key] = handle.extension;

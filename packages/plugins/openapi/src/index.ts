@@ -1,6 +1,7 @@
 export { parse } from "./parse";
 export { extract } from "./extract";
 export { invoke } from "./invoke";
+export { openApiPlugin, type OpenApiSpecConfig, type OpenApiPluginExtension } from "./plugin";
 
 export {
   OpenApiParseError,

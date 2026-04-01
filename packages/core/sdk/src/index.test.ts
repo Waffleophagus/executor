@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 
 import {
   createExecutor,
@@ -118,21 +118,25 @@ describe("SDK Executor", () => {
         }),
       );
 
-      const result = yield* Effect.either(
+      const exit = yield* executor.tools
+        .invoke("inventory.getItem", { itemId: "not-a-number" })
+        .pipe(Effect.exit);
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      const error = yield* Effect.flip(
         executor.tools.invoke("inventory.getItem", { itemId: "not-a-number" }),
       );
-      expect(result._tag).toBe("Left");
-      if (result._tag === "Left") {
-        expect((result.left as { _tag: string })._tag).toBe("ToolInvocationError");
-      }
+      expect(error._tag).toBe("ToolInvocationError");
     }),
   );
 
   it.effect("tool invocation fails for unknown tool", () =>
     Effect.gen(function* () {
       const executor = yield* createExecutor(makeTestConfig());
-      const result = yield* Effect.either(executor.tools.invoke("nonexistent", {}));
-      expect(result._tag).toBe("Left");
+      const error = yield* Effect.flip(
+        executor.tools.invoke("nonexistent", {}),
+      );
+      expect(error._tag).toBe("ToolNotFoundError");
     }),
   );
 
@@ -297,17 +301,14 @@ describe("SDK Executor", () => {
         }),
       );
 
-      const result = yield* Effect.either(
+      const error = yield* Effect.flip(
         executor.tools.invoke("auth.login", {}, {
           onElicitation: () =>
             Effect.succeed(new ElicitationResponse({ action: "decline" })),
         }),
       );
 
-      expect(result._tag).toBe("Left");
-      if (result._tag === "Left") {
-        expect((result.left as { _tag: string })._tag).toBe("ElicitationDeclinedError");
-      }
+      expect(error._tag).toBe("ElicitationDeclinedError");
     }),
   );
 
@@ -336,8 +337,10 @@ describe("SDK Executor", () => {
         }),
       );
 
-      const result = yield* Effect.either(executor.tools.invoke("auth.login", {}));
-      expect(result._tag).toBe("Left");
+      const error = yield* Effect.flip(
+        executor.tools.invoke("auth.login", {}),
+      );
+      expect(error._tag).toBe("ElicitationDeclinedError");
     }),
   );
 
@@ -384,6 +387,90 @@ describe("SDK Executor", () => {
       });
 
       expect(result.data).toEqual({ connected: true, code: "auth-code-123" });
+    }),
+  );
+
+  it.effect("plugin reads and writes secrets through the SDK", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [
+            memoryPlugin({
+              namespace: "vault",
+              tools: [
+                tool({
+                  name: "rotateKey",
+                  inputSchema: Schema.Struct({
+                    secretName: Schema.String,
+                    newValue: Schema.String,
+                  }),
+                  outputSchema: Schema.Struct({
+                    oldValue: Schema.String,
+                    newValue: Schema.String,
+                  }),
+                  handler: (
+                    { secretName, newValue },
+                    ctx: MemoryToolContext,
+                  ) =>
+                    Effect.gen(function* () {
+                      // Read the current secrets
+                      const secrets = yield* ctx.sdk.secrets.list();
+                      const existing = secrets.find(
+                        (s) => s.name === secretName,
+                      );
+
+                      let oldValue = "<none>";
+                      if (existing) {
+                        oldValue = yield* ctx.sdk.secrets.resolve(
+                          existing.id,
+                        );
+                        yield* ctx.sdk.secrets.remove(existing.id);
+                      }
+
+                      // Store the new value
+                      yield* ctx.sdk.secrets.store({
+                        name: secretName,
+                        value: newValue,
+                        purpose: "api_key",
+                      });
+
+                      return { oldValue, newValue };
+                    }),
+                }),
+              ],
+            }),
+          ] as const,
+        }),
+      );
+
+      // 1. Write initial secret
+      yield* executor.secrets.store({
+        name: "DB_PASSWORD",
+        value: "hunter2",
+        purpose: "database",
+      });
+
+      // Verify it's there
+      const before = yield* executor.secrets.list();
+      expect(before).toHaveLength(1);
+      expect(before[0]!.name).toBe("DB_PASSWORD");
+
+      // 2 + 3. Invoke tool that reads the old secret and writes a new one
+      const result = yield* executor.tools.invoke("vault.rotateKey", {
+        secretName: "DB_PASSWORD",
+        newValue: "correct-horse-battery-staple",
+      });
+
+      // 4. Verify the tool returned old and new values
+      expect(result.data).toEqual({
+        oldValue: "hunter2",
+        newValue: "correct-horse-battery-staple",
+      });
+
+      // 5. Read the updated secret store — should have the new value
+      const after = yield* executor.secrets.list();
+      expect(after).toHaveLength(1);
+      expect(after[0]!.name).toBe("DB_PASSWORD");
     }),
   );
 
