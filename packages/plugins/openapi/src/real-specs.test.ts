@@ -119,6 +119,43 @@ describe("Real specs: Cloudflare API", () => {
     }),
   );
 
+  it.effect(
+    "schema deduplication: definitions stored once, tools reference via $ref",
+    () =>
+      Effect.gen(function* () {
+        const executor = yield* createExecutor(
+          makeTestConfig({ plugins: [openApiPlugin()] as const }),
+        );
+
+        yield* executor.openapi.addSpec({
+          spec: specText,
+          namespace: "cloudflare",
+        });
+
+        // Shared definitions store contains all component schemas
+        const definitions = yield* executor.tools.definitions();
+        expect(Object.keys(definitions).length).toBeGreaterThan(5000);
+        expect(definitions["dns-records_dns_response_single"]).toBeDefined();
+
+        // Tool schemas use $ref pointers with re-attached definitions
+        const tools = yield* executor.tools.list({ query: "dns-record-details" });
+        expect(tools.length).toBeGreaterThan(0);
+        
+        const schema = yield* executor.tools.schema(tools[0]!.id);
+        const output = schema.outputSchema as Record<string, unknown>;
+        
+        // Root is a $ref pointer
+        expect(output["$ref"]).toBeTypeOf("string");
+        expect((output["$ref"] as string).startsWith("#/components/schemas/")).toBe(true);
+        
+        // Referenced definitions are re-attached for self-contained use
+        expect(output["$defs"]).toBeDefined();
+        const defs = output["$defs"] as Record<string, unknown>;
+        expect(Object.keys(defs).length).toBeGreaterThan(0);
+        expect(Object.keys(defs).length).toBeLessThan(100); // Only referenced ones, not all 5611
+      }),
+  );
+
   it.effect("removeSpec cleans up all Cloudflare tools", () =>
     Effect.gen(function* () {
       const executor = yield* createExecutor(

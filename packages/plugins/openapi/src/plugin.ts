@@ -147,6 +147,12 @@ export const openApiPlugin = (options?: {
                   .toLowerCase()
                   .replace(/[^a-z0-9]+/g, "_");
 
+              // Register shared component schemas first
+              const components = doc.components;
+              if (components?.schemas) {
+                yield* ctx.tools.registerDefinitions(components.schemas);
+              }
+
               const baseUrl = config.baseUrl ?? resolveBaseUrl(result.servers);
 
               const auth = config.auth ?? new NoAuth();

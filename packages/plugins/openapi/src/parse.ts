@@ -4,18 +4,18 @@ import { Effect } from "effect";
 
 import { OpenApiParseError } from "./errors";
 
-export type DereferencedDocument = OpenAPIV3.Document | OpenAPIV3_1.Document;
+export type ParsedDocument = OpenAPIV3.Document | OpenAPIV3_1.Document;
 
-/** Parse, validate, and dereference an OpenAPI document from text or URL */
+/** Parse, validate, and bundle an OpenAPI document from text or URL */
 export const parse = Effect.fn("OpenApi.parse")(function* (input: string) {
   const api: OpenAPI.Document = yield* Effect.tryPromise({
     try: () => {
       // If it looks like a URL, parse from URL; otherwise parse inline
       if (input.startsWith("http://") || input.startsWith("https://")) {
-        return SwaggerParser.dereference(input);
+        return SwaggerParser.bundle(input);
       }
       // Parse from string: swagger-parser needs an object, so JSON/YAML parse first
-      return SwaggerParser.dereference(parseTextToObject(input));
+      return SwaggerParser.bundle(parseTextToObject(input));
     },
     catch: (error) =>
       new OpenApiParseError({
@@ -32,7 +32,7 @@ export const parse = Effect.fn("OpenApi.parse")(function* (input: string) {
     });
   }
 
-  return api as DereferencedDocument;
+  return api as ParsedDocument;
 });
 
 // ---------------------------------------------------------------------------

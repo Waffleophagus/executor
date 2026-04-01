@@ -1,8 +1,16 @@
-import type { OpenAPIV3, OpenAPIV3_1 } from "openapi-types";
 import { Effect, Option } from "effect";
 
 import { OpenApiExtractionError } from "./errors";
-import type { DereferencedDocument } from "./parse";
+import type { ParsedDocument } from "./parse";
+import {
+  DocResolver,
+  preferredContent,
+  type OperationObject,
+  type ParameterObject,
+  type PathItemObject,
+  type RequestBodyObject,
+  type ResponseObject,
+} from "./openapi-utils";
 import {
   ExtractedOperation,
   ExtractionResult,
@@ -25,52 +33,25 @@ const HTTP_METHODS: readonly HttpMethod[] = [
 const VALID_PARAM_LOCATIONS = new Set<string>(["path", "query", "header", "cookie"]);
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-type ParameterObject = OpenAPIV3.ParameterObject | OpenAPIV3_1.ParameterObject;
-type OperationObject = OpenAPIV3.OperationObject | OpenAPIV3_1.OperationObject;
-type PathItemObject = OpenAPIV3.PathItemObject | OpenAPIV3_1.PathItemObject;
-type RequestBodyObject = OpenAPIV3.RequestBodyObject | OpenAPIV3_1.RequestBodyObject;
-type MediaTypeObject = OpenAPIV3.MediaTypeObject | OpenAPIV3_1.MediaTypeObject;
-
-/** After dereferencing, $ref objects are resolved — this narrows the type */
-const isResolved = <T>(value: T | OpenAPIV3.ReferenceObject | OpenAPIV3_1.ReferenceObject): value is T =>
-  typeof value === "object" && value !== null && !("$ref" in value);
-
-/** Pick the preferred media type entry (prefer application/json) */
-const preferredContent = (
-  content: Record<string, MediaTypeObject> | undefined,
-): { mediaType: string; media: MediaTypeObject } | undefined => {
-  if (!content) return undefined;
-  const entries = Object.entries(content);
-  const pick =
-    entries.find(([mt]) => mt === "application/json") ??
-    entries.find(([mt]) => mt.toLowerCase().includes("+json")) ??
-    entries.find(([mt]) => mt.toLowerCase().includes("json")) ??
-    entries[0];
-
-  return pick ? { mediaType: pick[0], media: pick[1] } : undefined;
-};
-
-// ---------------------------------------------------------------------------
 // Parameter extraction
 // ---------------------------------------------------------------------------
 
 const extractParameters = (
   pathItem: PathItemObject,
   operation: OperationObject,
+  r: DocResolver,
 ): OperationParameter[] => {
-  // Operation parameters override path-level ones by name+location
   const merged = new Map<string, ParameterObject>();
 
   for (const raw of pathItem.parameters ?? []) {
-    if (!isResolved(raw)) continue;
-    merged.set(`${raw.in}:${raw.name}`, raw);
+    const p = r.resolve<ParameterObject>(raw);
+    if (!p) continue;
+    merged.set(`${p.in}:${p.name}`, p);
   }
   for (const raw of operation.parameters ?? []) {
-    if (!isResolved(raw)) continue;
-    merged.set(`${raw.in}:${raw.name}`, raw);
+    const p = r.resolve<ParameterObject>(raw);
+    if (!p) continue;
+    merged.set(`${p.in}:${p.name}`, p);
   }
 
   return [...merged.values()]
@@ -98,9 +79,12 @@ const extractParameters = (
 
 const extractRequestBody = (
   operation: OperationObject,
+  r: DocResolver,
 ): OperationRequestBody | undefined => {
-  const body = operation.requestBody;
-  if (!body || !isResolved<RequestBodyObject>(body)) return undefined;
+  if (!operation.requestBody) return undefined;
+
+  const body = r.resolve<RequestBodyObject>(operation.requestBody);
+  if (!body) return undefined;
 
   const content = preferredContent(body.content);
   if (!content) return undefined;
@@ -118,22 +102,20 @@ const extractRequestBody = (
 
 const extractOutputSchema = (
   operation: OperationObject,
+  r: DocResolver,
 ): unknown | undefined => {
-  const responses = operation.responses;
-  if (!responses) return undefined;
+  if (!operation.responses) return undefined;
 
-  // Prefer 2xx responses, then default
-  const entries = Object.entries(responses);
+  const entries = Object.entries(operation.responses);
   const preferred = [
     ...entries.filter(([s]) => /^2\d\d$/.test(s)).sort(([a], [b]) => a.localeCompare(b)),
     ...entries.filter(([s]) => s === "default"),
   ];
 
-  for (const [, respValue] of preferred) {
-    if (!isResolved(respValue)) continue;
-    const content = preferredContent(
-      (respValue as OpenAPIV3.ResponseObject).content,
-    );
+  for (const [, ref] of preferred) {
+    const resp = r.resolve<ResponseObject>(ref);
+    if (!resp) continue;
+    const content = preferredContent(resp.content);
     if (content?.media.schema) return content.media.schema;
   }
 
@@ -190,10 +172,10 @@ const deriveOperationId = (
 // Server extraction
 // ---------------------------------------------------------------------------
 
-const extractServers = (doc: DereferencedDocument): ServerInfo[] =>
+const extractServers = (doc: ParsedDocument): ServerInfo[] =>
   (doc.servers ?? []).flatMap((server) => {
     if (!server.url) return [];
-    const variables = server.variables
+    const vars = server.variables
       ? Object.fromEntries(
           Object.entries(server.variables).flatMap(([name, v]) =>
             v.default ? [[name, v.default]] : [],
@@ -204,8 +186,8 @@ const extractServers = (doc: DereferencedDocument): ServerInfo[] =>
       new ServerInfo({
         url: server.url,
         variables:
-          variables && Object.keys(variables).length > 0
-            ? Option.some(variables)
+          vars && Object.keys(vars).length > 0
+            ? Option.some(vars)
             : Option.none(),
       }),
     ];
@@ -215,9 +197,9 @@ const extractServers = (doc: DereferencedDocument): ServerInfo[] =>
 // Main extraction
 // ---------------------------------------------------------------------------
 
-/** Extract all operations from a dereferenced OpenAPI 3.x document */
+/** Extract all operations from a bundled OpenAPI 3.x document */
 export const extract = Effect.fn("OpenApi.extract")(function* (
-  doc: DereferencedDocument,
+  doc: ParsedDocument,
 ) {
   const paths = doc.paths;
   if (!paths) {
@@ -226,6 +208,7 @@ export const extract = Effect.fn("OpenApi.extract")(function* (
     });
   }
 
+  const r = new DocResolver(doc);
   const operations: ExtractedOperation[] = [];
 
   for (const [pathTemplate, pathItem] of Object.entries(paths).sort(
@@ -237,10 +220,10 @@ export const extract = Effect.fn("OpenApi.extract")(function* (
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const parameters = extractParameters(pathItem, operation);
-      const requestBody = extractRequestBody(operation);
+      const parameters = extractParameters(pathItem, operation, r);
+      const requestBody = extractRequestBody(operation, r);
       const inputSchema = buildInputSchema(parameters, requestBody);
-      const outputSchema = extractOutputSchema(operation);
+      const outputSchema = extractOutputSchema(operation, r);
       const tags = (operation.tags ?? []).filter((t) => t.trim().length > 0);
 
       operations.push(
