@@ -5,8 +5,8 @@ import { ScopeId } from "@executor/sdk";
 import {
   OpenApiParseError,
   OpenApiExtractionError,
-} from "../errors";
-import { SpecPreview } from "../preview";
+} from "../sdk/errors";
+import { SpecPreview } from "../sdk/preview";
 
 // ---------------------------------------------------------------------------
 // Params

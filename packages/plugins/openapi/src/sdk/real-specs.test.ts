@@ -15,7 +15,7 @@ import { openApiPlugin } from "./plugin";
 // Load + parse once, share across tests
 // ---------------------------------------------------------------------------
 
-const specPath = resolve(__dirname, "../fixtures/cloudflare.json");
+const specPath = resolve(__dirname, "../../fixtures/cloudflare.json");
 const specText = readFileSync(specPath, "utf-8");
 
 let cachedDoc: ParsedDocument | null = null;

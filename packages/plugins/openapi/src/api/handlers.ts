@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "@effect/platform";
 import { Context, Effect } from "effect";
 
 import { addGroup } from "@executor/api";
-import type { OpenApiPluginExtension } from "../plugin";
+import type { OpenApiPluginExtension } from "../sdk/plugin";
 import { OpenApiGroup } from "./group";
 
 // ---------------------------------------------------------------------------
