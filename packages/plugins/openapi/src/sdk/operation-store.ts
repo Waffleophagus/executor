@@ -7,6 +7,11 @@ import type { OperationBinding, InvocationConfig } from "./types";
 // Operation store — plugin's own storage for invocation data
 // ---------------------------------------------------------------------------
 
+export interface SourceMeta {
+  readonly namespace: string;
+  readonly name: string;
+}
+
 export interface OpenApiOperationStore {
   readonly get: (
     toolId: ToolId,
@@ -27,6 +32,14 @@ export interface OpenApiOperationStore {
   /** Remove all entries for a namespace */
   readonly removeByNamespace: (namespace: string) => Effect.Effect<readonly ToolId[]>;
 
+  /** Store source metadata for a namespace */
+  readonly putSourceMeta: (meta: SourceMeta) => Effect.Effect<void>;
+
+  /** Remove source metadata for a namespace */
+  readonly removeSourceMeta: (namespace: string) => Effect.Effect<void>;
+
+  /** List all known source metadata */
+  readonly listSourceMeta: () => Effect.Effect<readonly SourceMeta[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +51,7 @@ export const makeInMemoryOperationStore = (): OpenApiOperationStore => {
     string,
     { binding: OperationBinding; config: InvocationConfig; namespace: string }
   >();
+  const sourceMetas = new Map<string, SourceMeta>();
 
   return {
     get: (toolId) =>
@@ -75,5 +89,13 @@ export const makeInMemoryOperationStore = (): OpenApiOperationStore => {
         return ids;
       }),
 
+    putSourceMeta: (meta) =>
+      Effect.sync(() => { sourceMetas.set(meta.namespace, meta); }),
+
+    removeSourceMeta: (namespace) =>
+      Effect.sync(() => { sourceMetas.delete(namespace); }),
+
+    listSourceMeta: () =>
+      Effect.sync(() => [...sourceMetas.values()]),
   };
 };

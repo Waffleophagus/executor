@@ -1,7 +1,7 @@
 import type {
   CodeExecutor,
   ExecuteResult,
-  ToolInvoker,
+  SandboxToolInvoker,
 } from "@executor/codemode-core";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -183,7 +183,7 @@ const createLogBridge = (
 
 const createToolBridge = (
   context: QuickJSContext,
-  toolInvoker: ToolInvoker,
+  toolInvoker: SandboxToolInvoker,
   pendingDeferreds: Set<QuickJSDeferredPromise>,
 ): QuickJSHandle =>
   context.newFunction("__executor_invokeTool", (pathHandle, argsHandle) => {
@@ -293,7 +293,7 @@ const drainAsync = async (
 const evaluateInQuickJs = async (
   options: QuickJsExecutorOptions,
   code: string,
-  toolInvoker: ToolInvoker,
+  toolInvoker: SandboxToolInvoker,
 ): Promise<ExecuteResult> => {
   const timeoutMs = Math.max(100, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const deadlineMs = Date.now() + timeoutMs;
@@ -404,7 +404,7 @@ const evaluateInQuickJs = async (
 const runInQuickJs = (
   options: QuickJsExecutorOptions,
   code: string,
-  toolInvoker: ToolInvoker,
+  toolInvoker: SandboxToolInvoker,
 ): Effect.Effect<ExecuteResult, QuickJsExecutionError> =>
   Effect.tryPromise({
     try: () => evaluateInQuickJs(options, code, toolInvoker),
@@ -414,6 +414,6 @@ const runInQuickJs = (
 export const makeQuickJsExecutor = (
   options: QuickJsExecutorOptions = {},
 ): CodeExecutor => ({
-  execute: (code: string, toolInvoker: ToolInvoker) =>
+  execute: (code: string, toolInvoker: SandboxToolInvoker) =>
     runInQuickJs(options, code, toolInvoker),
 });

@@ -8,7 +8,7 @@
 import { Effect, Schema } from "effect";
 import type { ToolId, ScopedKv } from "@executor/sdk";
 
-import type { OpenApiOperationStore } from "./operation-store";
+import type { OpenApiOperationStore, SourceMeta } from "./operation-store";
 import { OperationBinding, InvocationConfig } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,8 @@ class StoredEntry extends Schema.Class<StoredEntry>("StoredEntry")({
 
 const encodeEntry = Schema.encodeSync(Schema.parseJson(StoredEntry));
 const decodeEntry = Schema.decodeUnknownSync(Schema.parseJson(StoredEntry));
+
+const SOURCE_META_PREFIX = "__source_meta__:";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -51,6 +53,7 @@ export const makeKvOperationStore = (kv: ScopedKv): OpenApiOperationStore => ({
       const entries = yield* kv.list();
       const ids: ToolId[] = [];
       for (const e of entries) {
+        if (e.key.startsWith(SOURCE_META_PREFIX)) continue;
         const entry = decodeEntry(e.value);
         if (entry.namespace === namespace) ids.push(e.key as ToolId);
       }
@@ -62,6 +65,7 @@ export const makeKvOperationStore = (kv: ScopedKv): OpenApiOperationStore => ({
       const entries = yield* kv.list();
       const ids: ToolId[] = [];
       for (const e of entries) {
+        if (e.key.startsWith(SOURCE_META_PREFIX)) continue;
         const entry = decodeEntry(e.value);
         if (entry.namespace === namespace) {
           ids.push(e.key as ToolId);
@@ -69,5 +73,23 @@ export const makeKvOperationStore = (kv: ScopedKv): OpenApiOperationStore => ({
         }
       }
       return ids;
+    }),
+
+  putSourceMeta: (meta) =>
+    kv.set(`${SOURCE_META_PREFIX}${meta.namespace}`, JSON.stringify(meta)),
+
+  removeSourceMeta: (namespace) =>
+    kv.delete(`${SOURCE_META_PREFIX}${namespace}`).pipe(Effect.asVoid),
+
+  listSourceMeta: () =>
+    Effect.gen(function* () {
+      const entries = yield* kv.list();
+      const metas: SourceMeta[] = [];
+      for (const e of entries) {
+        if (e.key.startsWith(SOURCE_META_PREFIX)) {
+          metas.push(JSON.parse(e.value) as SourceMeta);
+        }
+      }
+      return metas;
     }),
 });

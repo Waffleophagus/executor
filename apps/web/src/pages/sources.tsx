@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Result, useAtomValue, useAtomRefresh, sourcesAtom } from "@executor/react";
 import type { SourcePlugin } from "@executor/react";
 import { openApiSourcePlugin } from "@executor/plugin-openapi/react";
+import { McpInstallCard } from "../components/mcp-install-card";
 
 // ---------------------------------------------------------------------------
 // Registered source plugins
@@ -70,6 +71,8 @@ export function SourcesPage() {
             ))}
           </div>
         </div>
+
+        <McpInstallCard className="mb-8 rounded-2xl border border-border bg-card/80 p-5" />
 
         {Result.match(sources, {
           onInitial: () => (

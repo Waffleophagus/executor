@@ -9,6 +9,7 @@ export {
 export {
   makeInMemoryOperationStore,
   type OpenApiOperationStore,
+  type SourceMeta,
 } from "./operation-store";
 export { makeKvOperationStore } from "./kv-operation-store";
 export {

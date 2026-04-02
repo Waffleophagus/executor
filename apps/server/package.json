@@ -16,6 +16,8 @@
     "@executor/plugin-onepassword": "workspace:*",
     "@executor/plugin-openapi": "workspace:*",
     "@executor/sdk": "workspace:*",
+    "@executor/host-mcp": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "@executor/storage-file": "workspace:*",
     "effect": "catalog:"
   },

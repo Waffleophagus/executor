@@ -14,7 +14,8 @@ import { SourcesHandlers } from "./handlers/sources";
 import { SecretsHandlers } from "./handlers/secrets";
 import { OpenApiHandlersLive } from "./handlers/openapi";
 import { OnePasswordHandlersLive } from "./handlers/onepassword";
-import { ExecutorServiceLive } from "./services/executor";
+import { ExecutorServiceLayer, getExecutor } from "./services/executor";
+import { createMcpRequestHandler, type McpRequestHandler } from "./mcp";
 
 // ---------------------------------------------------------------------------
 // Composed API — core + plugin groups
@@ -23,7 +24,7 @@ import { ExecutorServiceLive } from "./services/executor";
 const ExecutorApiWithPlugins = addGroup(OpenApiGroup).add(OnePasswordGroup);
 
 // ---------------------------------------------------------------------------
-// API layer — wire handlers
+// API Layer
 // ---------------------------------------------------------------------------
 
 const ApiLive = HttpApiBuilder.api(ExecutorApiWithPlugins).pipe(
@@ -34,11 +35,41 @@ const ApiLive = HttpApiBuilder.api(ExecutorApiWithPlugins).pipe(
     OpenApiHandlersLive,
     OnePasswordHandlersLive,
   ]),
-  Layer.provide(ExecutorServiceLive),
+  Layer.provide(ExecutorServiceLayer),
 );
 
 // ---------------------------------------------------------------------------
-// Web handler — usable by Vite plugin, standalone server, tests, etc.
+// Shared server — API + MCP from the same executor instance
+// ---------------------------------------------------------------------------
+
+export type ServerHandlers = {
+  readonly api: {
+    readonly handler: (request: Request) => Promise<Response>;
+    readonly dispose: () => Promise<void>;
+  };
+  readonly mcp: McpRequestHandler;
+};
+
+export const createServerHandlers = async (): Promise<ServerHandlers> => {
+  const executor = await getExecutor();
+
+  const api = HttpApiBuilder.toWebHandler(
+    HttpApiSwagger.layer().pipe(
+      Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
+      Layer.provideMerge(HttpApiBuilder.middlewareCors()),
+      Layer.provideMerge(ApiLive),
+      Layer.provideMerge(HttpServer.layerContext),
+    ),
+    { middleware: HttpMiddleware.logger },
+  );
+
+  const mcp = createMcpRequestHandler({ executor });
+
+  return { api, mcp };
+};
+
+// ---------------------------------------------------------------------------
+// Backwards compat — standalone API handler (no MCP)
 // ---------------------------------------------------------------------------
 
 export const createApiHandler = () =>
@@ -54,4 +85,4 @@ export const createApiHandler = () =>
 
 export type ApiHandler = ReturnType<typeof createApiHandler>;
 
-export { ExecutorServiceLive } from "./services/executor";
+export { ExecutorServiceLayer } from "./services/executor";

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import * as SqlClient from "@effect/sql/SqlClient";
 import * as fs from "node:fs";
@@ -18,7 +18,7 @@ type ServerPlugins = readonly [
   ReturnType<typeof fileSecretsPlugin>,
   ExecutorPlugin<"onepassword", OnePasswordExtension>,
 ];
-type ServerExecutor = Executor<ServerPlugins>;
+export type ServerExecutor = Executor<ServerPlugins>;
 
 // ---------------------------------------------------------------------------
 // Service tag
@@ -41,18 +41,16 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = `${DATA_DIR}/data.db`;
 
 // ---------------------------------------------------------------------------
-// Layer — SQLite-backed executor with plugins
+// Executor Layer — SQLite-backed, scoped to ManagedRuntime lifetime
 // ---------------------------------------------------------------------------
 
-export const ExecutorServiceLive = Layer.effect(
+const ExecutorLayer = Layer.effect(
   ExecutorService,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
-    // Run migrations
     yield* migrate.pipe(Effect.catchAll((e) => Effect.die(e)));
 
-    // Single KV for everything
     const kv = makeSqliteKv(sql);
     const config = makeKvConfig(kv);
 
@@ -72,4 +70,26 @@ export const ExecutorServiceLive = Layer.effect(
   }),
 ).pipe(
   Layer.provide(SqliteClient.layer({ filename: DB_PATH })),
+);
+
+// ---------------------------------------------------------------------------
+// ManagedRuntime — keeps the SQLite scope alive for the process lifetime
+// ---------------------------------------------------------------------------
+
+const runtime = ManagedRuntime.make(ExecutorLayer);
+
+/**
+ * Get the shared executor instance. The ManagedRuntime keeps the SQLite
+ * connection (and everything else) alive until the process exits.
+ */
+export const getExecutor = (): Promise<ServerExecutor> =>
+  runtime.runPromise(ExecutorService);
+
+/**
+ * Provide `ExecutorService` to an Effect layer using the shared runtime.
+ * Used by the API handler.
+ */
+export const ExecutorServiceLayer = Layer.effect(
+  ExecutorService,
+  Effect.promise(() => getExecutor()),
 );

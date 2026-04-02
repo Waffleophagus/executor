@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
-import type { ToolInvoker } from "@executor/codemode-core";
+import type { SandboxToolInvoker } from "@executor/codemode-core";
 import { makeQuickJsExecutor } from "./index";
 
 class UnknownToolError extends Data.TaggedError("UnknownToolError")<{
@@ -11,7 +11,7 @@ class UnknownToolError extends Data.TaggedError("UnknownToolError")<{
 
 const makeTestInvoker = (
   handlers: Record<string, (args: unknown) => unknown>,
-): ToolInvoker => ({
+): SandboxToolInvoker => ({
   invoke: ({ path, args }) => {
     const handler = handlers[path];
     if (!handler) {

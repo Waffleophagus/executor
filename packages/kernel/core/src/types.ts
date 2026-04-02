@@ -21,8 +21,8 @@ export interface Tool {
   ) => unknown | Promise<unknown>;
 }
 
-/** Invoke a tool by path */
-export interface ToolInvoker {
+/** Invoke a tool by path from inside a sandbox */
+export interface SandboxToolInvoker {
   invoke(input: {
     path: string;
     args: unknown;
@@ -40,7 +40,7 @@ export type ExecuteResult = {
 export interface CodeExecutor {
   execute(
     code: string,
-    toolInvoker: ToolInvoker,
+    toolInvoker: SandboxToolInvoker,
   ): Effect.Effect<ExecuteResult, unknown>;
 }
 

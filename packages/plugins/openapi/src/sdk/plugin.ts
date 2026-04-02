@@ -121,6 +121,19 @@ export const openApiPlugin = (options?: {
           }),
         );
 
+        // Restore source metadata from persistent store
+        const savedMetas = yield* operationStore.listSourceMeta();
+        for (const meta of savedMetas) {
+          addedSources.set(meta.namespace, new Source({
+            id: meta.namespace,
+            name: meta.name,
+            kind: "openapi",
+          }));
+        }
+
+        // Tools are already persisted in the KV tool registry — no need to
+        // re-register them. We only need the source list and the invoker.
+
         // Register source manager so the core can list/remove/refresh our sources
         yield* ctx.sources.addManager({
           kind: "openapi",
@@ -130,11 +143,9 @@ export const openApiPlugin = (options?: {
 
           remove: (sourceId: string) =>
             Effect.gen(function* () {
-              // Clean up operation store
               yield* operationStore.removeByNamespace(sourceId);
-              // Remove tools from registry
+              yield* operationStore.removeSourceMeta(sourceId);
               yield* ctx.tools.unregisterBySource(sourceId);
-              // Remove from our tracking
               addedSources.delete(sourceId);
             }),
 
@@ -186,8 +197,9 @@ export const openApiPlugin = (options?: {
 
                 yield* ctx.tools.register(registrations);
 
-                // Track the source
+                // Track the source — persist and cache
                 const sourceName = Option.getOrElse(result.title, () => namespace);
+                yield* operationStore.putSourceMeta({ namespace, name: sourceName });
                 addedSources.set(namespace, new Source({
                   id: namespace,
                   name: sourceName,
@@ -203,6 +215,7 @@ export const openApiPlugin = (options?: {
                 if (toolIds.length > 0) {
                   yield* ctx.tools.unregister(toolIds);
                 }
+                yield* operationStore.removeSourceMeta(namespace);
                 addedSources.delete(namespace);
               }),
           },
