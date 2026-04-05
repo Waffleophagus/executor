@@ -6,7 +6,7 @@ This repo uses Changesets to drive releases for the published `executor` CLI.
 
 Only `executor` is managed directly by Changesets.
 
-After `changeset version` runs, `scripts/release/sync-versions.mjs` copies that version to the rest of the repo manifests so the workspace stays aligned without making every internal package independently releasable.
+Release PRs should only version the published CLI package instead of the rest of the workspace.
 
 ## Beta releases
 
