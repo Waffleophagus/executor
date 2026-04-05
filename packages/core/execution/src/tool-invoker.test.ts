@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 
 import {
   ElicitationResponse,
+  Source,
   createExecutor,
   inMemoryToolsPlugin,
   makeTestConfig,
@@ -23,8 +24,8 @@ const ContactInput = Schema.Struct({
 const acceptAll = () => Effect.succeed(new ElicitationResponse({ action: "accept" }));
 
 const makeSearchExecutor = () =>
-  createExecutor(
-    makeTestConfig({
+  Effect.gen(function* () {
+    const config = makeTestConfig({
       plugins: [
         inMemoryToolsPlugin({
           namespace: "github",
@@ -67,8 +68,27 @@ const makeSearchExecutor = () =>
           ],
         }),
       ] as const,
-    }),
-  );
+    });
+
+    yield* config.sources.registerRuntime(new Source({
+      id: "github",
+      name: "GitHub",
+      kind: "in-memory",
+      runtime: true,
+      canRemove: false,
+      canRefresh: false,
+    }));
+    yield* config.sources.registerRuntime(new Source({
+      id: "crm",
+      name: "CRM",
+      kind: "in-memory",
+      runtime: true,
+      canRemove: false,
+      canRefresh: false,
+    }));
+
+    return yield* createExecutor(config);
+  });
 
 describe("tool discovery", () => {
   it.effect("ranks matches using ids, namespaces, camelCase names, and descriptions", () =>
@@ -125,6 +145,37 @@ describe("tool discovery", () => {
       expect(sandboxResult.error).toBeUndefined();
       expect(sandboxResult.result).toEqual([
         expect.objectContaining({ path: "crm.createContact" }),
+      ]);
+    }),
+  );
+
+  it.effect("supports executor-scoped source listing and tool search", () =>
+    Effect.gen(function* () {
+      const executor = yield* makeSearchExecutor();
+
+      const listed = yield* Effect.promise(() =>
+        createExecutionEngine({ executor }).execute(
+          "return await tools.executor.sources.list();",
+          { onElicitation: acceptAll },
+        ),
+      );
+      expect(listed.error).toBeUndefined();
+      expect(listed.result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "github", toolCount: 3 }),
+          expect.objectContaining({ id: "crm", toolCount: 2 }),
+        ]),
+      );
+
+      const searched = yield* Effect.promise(() =>
+        createExecutionEngine({ executor }).execute(
+          'return await tools.executor.tools.search({ query: "list contacts", namespace: "crm", limit: 5 });',
+          { onElicitation: acceptAll },
+        ),
+      );
+      expect(searched.error).toBeUndefined();
+      expect(searched.result).toEqual([
+        expect.objectContaining({ path: "crm.listContacts" }),
       ]);
     }),
   );
@@ -207,6 +258,17 @@ describe("tool discovery", () => {
       expect(invalidDescribe.error).toBeUndefined();
       expect(String(invalidDescribe.result)).toContain(
         "tools.describe.tool no longer accepts includeSchemas",
+      );
+
+      const invalidExecutorSearch = yield* Effect.promise(() =>
+        engine.execute(
+          'try { return await tools.executor.tools.search("crm"); } catch (error) { return error instanceof Error ? error.message : String(error); }',
+          { onElicitation: acceptAll },
+        ),
+      );
+      expect(invalidExecutorSearch.error).toBeUndefined();
+      expect(String(invalidExecutorSearch.result)).toContain(
+        "tools.executor.tools.search expects an object",
       );
     }),
   );
