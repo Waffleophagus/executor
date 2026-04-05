@@ -50,13 +50,15 @@ const PLUGIN_KEY = "keychain";
 
 export const keychainPlugin = (
   config?: KeychainPluginConfig,
-): ExecutorPlugin<typeof PLUGIN_KEY, KeychainExtension> => {
-  const serviceName = resolveServiceName(config?.serviceName);
-
-  return definePlugin({
+): ExecutorPlugin<typeof PLUGIN_KEY, KeychainExtension> =>
+  definePlugin({
     key: PLUGIN_KEY,
     init: (ctx) =>
       Effect.gen(function* () {
+        // Scope the service name to the current scope so each folder gets its own keychain entries
+        const baseServiceName = resolveServiceName(config?.serviceName);
+        const serviceName = `${baseServiceName}/${ctx.scope.id}`;
+
         yield* ctx.secrets.addProvider(makeKeychainProvider(serviceName));
 
         const extension: KeychainExtension = {
@@ -73,4 +75,3 @@ export const keychainPlugin = (
         return { extension };
       }),
   });
-};

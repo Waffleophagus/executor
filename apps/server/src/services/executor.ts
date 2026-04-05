@@ -5,10 +5,23 @@ import { NodeFileSystem } from "@effect/platform-node";
 import * as fs from "node:fs";
 
 import { createExecutor, scopeKv } from "@executor/sdk";
-import { makeSqliteKv, makeKvConfig, makeScopedKv, migrate } from "@executor/storage-file";
+import {
+  makeSqliteKv,
+  makeKvConfig,
+  makeScopedKv,
+  migrate,
+} from "@executor/storage-file";
 import { withConfigFile } from "@executor/config";
-import { openApiPlugin, makeKvOperationStore, type OpenApiPluginExtension } from "@executor/plugin-openapi";
-import { mcpPlugin, makeKvBindingStore, type McpPluginExtension } from "@executor/plugin-mcp";
+import {
+  openApiPlugin,
+  makeKvOperationStore,
+  type OpenApiPluginExtension,
+} from "@executor/plugin-openapi";
+import {
+  mcpPlugin,
+  makeKvBindingStore,
+  type McpPluginExtension,
+} from "@executor/plugin-mcp";
 import {
   googleDiscoveryPlugin,
   makeKvBindingStore as makeKvGoogleDiscoveryBindingStore,
@@ -21,7 +34,10 @@ import {
 } from "@executor/plugin-graphql";
 import { keychainPlugin } from "@executor/plugin-keychain";
 import { fileSecretsPlugin } from "@executor/plugin-file-secrets";
-import { onepasswordPlugin, type OnePasswordExtension } from "@executor/plugin-onepassword";
+import {
+  onepasswordPlugin,
+  type OnePasswordExtension,
+} from "@executor/plugin-onepassword";
 
 import type { Executor, ExecutorPlugin } from "@executor/sdk";
 
@@ -30,7 +46,6 @@ type ServerPlugins = readonly [
   ExecutorPlugin<"mcp", McpPluginExtension>,
   ExecutorPlugin<"googleDiscovery", GoogleDiscoveryPluginExtension>,
   ExecutorPlugin<"graphql", GraphqlPluginExtension>,
-  ReturnType<typeof keychainPlugin>,
   ReturnType<typeof fileSecretsPlugin>,
   ExecutorPlugin<"onepassword", OnePasswordExtension>,
 ];
@@ -60,9 +75,17 @@ const resolveDataDir = (): string => {
   if (process.env.EXECUTOR_DATA_DIR) return process.env.EXECUTOR_DATA_DIR;
   const platform = process.platform;
   const home = homedir();
-  if (platform === "darwin") return join(home, "Library", "Application Support", "Executor");
-  if (platform === "win32") return join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "Executor");
-  return join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "executor");
+  if (platform === "darwin")
+    return join(home, "Library", "Application Support", "Executor");
+  if (platform === "win32")
+    return join(
+      process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+      "Executor",
+    );
+  return join(
+    process.env.XDG_DATA_HOME ?? join(home, ".local", "share"),
+    "executor",
+  );
 };
 
 const DATA_DIR = resolveDataDir();
@@ -108,7 +131,10 @@ const ExecutorLayer = Layer.effect(
           ),
         }),
         googleDiscoveryPlugin({
-          bindingStore: makeKvGoogleDiscoveryBindingStore(scopedKv, "google-discovery"),
+          bindingStore: makeKvGoogleDiscoveryBindingStore(
+            scopedKv,
+            "google-discovery",
+          ),
         }),
         graphqlPlugin({
           operationStore: withConfigFile.graphql(
@@ -117,7 +143,7 @@ const ExecutorLayer = Layer.effect(
             fsLayer,
           ),
         }),
-        keychainPlugin(),
+        // keychainPlugin(),
         fileSecretsPlugin(),
         onepasswordPlugin({
           kv: scopeKv(scopedKv, "onepassword"),
@@ -125,26 +151,25 @@ const ExecutorLayer = Layer.effect(
       ] as const,
     });
   }),
-).pipe(
-  Layer.provide(SqliteClient.layer({ filename: DB_PATH })),
-);
+).pipe(Layer.provide(SqliteClient.layer({ filename: DB_PATH })));
 
 // ---------------------------------------------------------------------------
 // ManagedRuntime — shared singleton for production, scoped handles for dev HMR
 // ---------------------------------------------------------------------------
 
-export const createServerExecutorHandle = async (): Promise<ServerExecutorHandle> => {
-  const runtime = ManagedRuntime.make(ExecutorLayer);
-  const executor = await runtime.runPromise(ExecutorService);
+export const createServerExecutorHandle =
+  async (): Promise<ServerExecutorHandle> => {
+    const runtime = ManagedRuntime.make(ExecutorLayer);
+    const executor = await runtime.runPromise(ExecutorService);
 
-  return {
-    executor,
-    dispose: async () => {
-      await Effect.runPromise(executor.close()).catch(() => undefined);
-      await runtime.dispose().catch(() => undefined);
-    },
+    return {
+      executor,
+      dispose: async () => {
+        await Effect.runPromise(executor.close()).catch(() => undefined);
+        await runtime.dispose().catch(() => undefined);
+      },
+    };
   };
-};
 
 let sharedHandlePromise: Promise<ServerExecutorHandle> | null = null;
 

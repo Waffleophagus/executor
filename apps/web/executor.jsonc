@@ -1,12 +1,3 @@
 {
-  "sources": [
-    {
-      "kind": "mcp",
-      "transport": "remote",
-      "name": "Axiom MCP Server",
-      "endpoint": "https://mcp.axiom.co/mcp",
-      "remoteTransport": "auto",
-      "namespace": "mcp_axiom_co"
-    }
-  ]
+  "sources": []
 }

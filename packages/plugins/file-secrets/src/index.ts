@@ -29,35 +29,55 @@ const authFilePath = (overrideDir?: string): string =>
 
 // ---------------------------------------------------------------------------
 // Schema for the auth file
+//
+// Top-level keys are scope IDs, values are { secretId: secretValue } maps.
+//   { "web-a1b2c3d4": { "github-token": "ghp_xxx" } }
 // ---------------------------------------------------------------------------
 
-const AuthFile = Schema.Record({ key: Schema.String, value: Schema.String });
-const decodeAuthFile = Schema.decodeUnknownSync(AuthFile);
+const ScopedAuthFile = Schema.Record({
+  key: Schema.String,
+  value: Schema.Record({ key: Schema.String, value: Schema.String }),
+});
+const decodeScopedAuthFile = Schema.decodeUnknownSync(ScopedAuthFile);
 
 // ---------------------------------------------------------------------------
 // File I/O with restricted permissions
 // ---------------------------------------------------------------------------
 
-const readAuthFile = (filePath: string): Record<string, string> => {
+const readFullFile = (
+  filePath: string,
+): Record<string, Record<string, string>> => {
   try {
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, "utf-8");
-    return decodeAuthFile(JSON.parse(raw));
+    return decodeScopedAuthFile(JSON.parse(raw));
   } catch {
     return {};
   }
 };
 
-const writeAuthFile = (
+const readScopeSecrets = (
   filePath: string,
-  data: Record<string, string>,
+  scopeId: string,
+): Record<string, string> => readFullFile(filePath)[scopeId] ?? {};
+
+const writeScopeSecrets = (
+  filePath: string,
+  scopeId: string,
+  secrets: Record<string, string>,
 ): void => {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
+  const full = readFullFile(filePath);
+  if (Object.keys(secrets).length === 0) {
+    delete full[scopeId];
+  } else {
+    full[scopeId] = secrets;
+  }
   const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.writeFileSync(tmp, JSON.stringify(full, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, filePath);
 };
 
@@ -83,35 +103,38 @@ export interface FileSecretsExtension {
 // Provider factory (internal)
 // ---------------------------------------------------------------------------
 
-const makeProvider = (filePath: string): SecretProvider => ({
+const makeScopedProvider = (
+  filePath: string,
+  scopeId: string,
+): SecretProvider => ({
   key: "file",
   writable: true,
 
   get: (secretId) =>
     Effect.sync(() => {
-      const data = readAuthFile(filePath);
+      const data = readScopeSecrets(filePath, scopeId);
       return data[secretId] ?? null;
     }),
 
   set: (secretId, value) =>
     Effect.sync(() => {
-      const data = readAuthFile(filePath);
+      const data = readScopeSecrets(filePath, scopeId);
       data[secretId] = value;
-      writeAuthFile(filePath, data);
+      writeScopeSecrets(filePath, scopeId, data);
     }),
 
   delete: (secretId) =>
     Effect.sync(() => {
-      const data = readAuthFile(filePath);
+      const data = readScopeSecrets(filePath, scopeId);
       const had = secretId in data;
       delete data[secretId];
-      if (had) writeAuthFile(filePath, data);
+      if (had) writeScopeSecrets(filePath, scopeId, data);
       return had;
     }),
 
   list: () =>
     Effect.sync(() => {
-      const data = readAuthFile(filePath);
+      const data = readScopeSecrets(filePath, scopeId);
       return Object.keys(data).map((k) => ({ id: k, name: k }));
     }),
 });
@@ -124,18 +147,19 @@ const PLUGIN_KEY = "fileSecrets";
 
 export const fileSecretsPlugin = (
   config?: FileSecretsPluginConfig,
-): ExecutorPlugin<typeof PLUGIN_KEY, FileSecretsExtension> => {
-  const filePath = authFilePath(config?.directory);
-
-  return definePlugin({
+): ExecutorPlugin<typeof PLUGIN_KEY, FileSecretsExtension> =>
+  definePlugin({
     key: PLUGIN_KEY,
     init: (ctx) =>
       Effect.gen(function* () {
-        yield* ctx.secrets.addProvider(makeProvider(filePath));
+        const filePath = authFilePath(config?.directory);
+
+        yield* ctx.secrets.addProvider(
+          makeScopedProvider(filePath, ctx.scope.id),
+        );
 
         return {
           extension: { filePath },
         };
       }),
   });
-};
