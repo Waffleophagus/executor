@@ -2,7 +2,7 @@
   "name": "@executor/runtime-quickjs",
   "private": true,
   "type": "module",
-  "version": "1.4.0-beta.0",
+  "version": "1.4.0",
   "exports": {
     ".": "./src/index.ts"
   },
