@@ -1,6 +1,15 @@
 import { Effect } from "effect";
+import * as Data from "effect/Data";
 import type { Executor, ToolId, ToolMetadata, ToolSchema, InvokeOptions } from "@executor/sdk";
 import type { SandboxToolInvoker } from "@executor/codemode-core";
+
+class ToolApprovalDeclinedError extends Data.TaggedError(
+  "ToolApprovalDeclinedError",
+)<{
+  readonly toolId: ToolId;
+  readonly action: "decline" | "cancel";
+  readonly message: string;
+}> {}
 
 /**
  * Bridges QuickJS `tools.someSource.someOp(args)` calls into
@@ -19,9 +28,11 @@ export const makeExecutorToolInvoker = (
       ).pipe(
         Effect.catchTag("ElicitationDeclinedError", (err) =>
           Effect.fail(
-            new Error(
-              `Tool "${err.toolId}" requires approval but the request was ${err.action === "cancel" ? "cancelled" : "declined"} by the user.`,
-            ),
+            new ToolApprovalDeclinedError({
+              toolId: err.toolId,
+              action: err.action,
+              message: `Tool "${err.toolId}" requires approval but the request was ${err.action === "cancel" ? "cancelled" : "declined"} by the user.`,
+            }),
           ),
         ),
       );

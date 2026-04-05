@@ -27,7 +27,11 @@ import {
   type McpConnection,
   type ConnectorInput,
 } from "./connection";
-import { McpConnectionError } from "./errors";
+import {
+  McpConnectionError,
+  McpOAuthError,
+  McpToolDiscoveryError,
+} from "./errors";
 import {
   startMcpOAuthAuthorization,
   exchangeMcpOAuthCode,
@@ -223,6 +227,14 @@ const makeOAuthProvider = (
   discoveryState: () => undefined,
 });
 
+const remoteConnectionError = (message: string) =>
+  new McpConnectionError({ transport: "remote", message });
+
+const mcpOAuthError = (message: string) => new McpOAuthError({ message });
+
+const mcpDiscoveryError = (message: string) =>
+  new McpToolDiscoveryError({ stage: "list_tools", message });
+
 // ---------------------------------------------------------------------------
 // Plugin factory
 // ---------------------------------------------------------------------------
@@ -318,7 +330,7 @@ export const mcpPlugin = (options?: {
                 .pipe(
                   Effect.mapError(
                     () =>
-                      new Error(
+                      remoteConnectionError(
                         `Failed to resolve secret "${auth.secretId}"`,
                       ),
                   ),
@@ -331,7 +343,10 @@ export const mcpPlugin = (options?: {
                 .resolve(auth.accessTokenSecretId as any, ctx.scope.id)
                 .pipe(
                   Effect.mapError(
-                    () => new Error("Failed to resolve OAuth access token"),
+                    () =>
+                      remoteConnectionError(
+                        "Failed to resolve OAuth access token",
+                      ),
                   ),
                 );
 
@@ -475,7 +490,7 @@ export const mcpPlugin = (options?: {
             const trimmed = endpoint.trim();
             if (!trimmed)
               return yield* Effect.fail(
-                new Error("Endpoint URL is required"),
+                remoteConnectionError("Endpoint URL is required"),
               );
 
             const name = (() => {
@@ -534,7 +549,7 @@ export const mcpPlugin = (options?: {
             }
 
             return yield* Effect.fail(
-              new Error(
+              remoteConnectionError(
                 "Could not connect to MCP endpoint and no OAuth was detected",
               ),
             );
@@ -548,9 +563,8 @@ export const mcpPlugin = (options?: {
             const connector = createMcpConnector(ci);
 
             const manifest = yield* discoverTools(connector).pipe(
-              Effect.mapError(
-                (err) =>
-                  new Error(`MCP discovery failed: ${err.message}`),
+              Effect.mapError((err) =>
+                mcpDiscoveryError(`MCP discovery failed: ${err.message}`),
               ),
             );
 
@@ -605,7 +619,7 @@ export const mcpPlugin = (options?: {
             const sd = yield* bindingStore.getSourceConfig(namespace);
             if (!sd)
               return yield* Effect.fail(
-                new Error(
+                remoteConnectionError(
                   `No stored config for MCP source "${namespace}"`,
                 ),
               );
@@ -614,9 +628,8 @@ export const mcpPlugin = (options?: {
             const manifest = yield* discoverTools(
               createMcpConnector(ci),
             ).pipe(
-              Effect.mapError(
-                (err) =>
-                  new Error(`MCP refresh failed: ${err.message}`),
+              Effect.mapError((err) =>
+                mcpDiscoveryError(`MCP refresh failed: ${err.message}`),
               ),
             );
 
@@ -647,7 +660,7 @@ export const mcpPlugin = (options?: {
             const endpoint = input.endpoint.trim();
             if (!endpoint)
               return yield* Effect.fail(
-                new Error("MCP OAuth requires an endpoint"),
+                mcpOAuthError("MCP OAuth requires an endpoint"),
               );
 
             let fullEndpoint = endpoint;
@@ -667,8 +680,8 @@ export const mcpPlugin = (options?: {
               redirectUrl: input.redirectUrl,
               state: sessionId,
             }).pipe(
-              Effect.mapError(
-                (e) => new Error(`OAuth start failed: ${e.message}`),
+              Effect.mapError((e) =>
+                mcpOAuthError(`OAuth start failed: ${e.message}`),
               ),
             );
 
@@ -694,28 +707,25 @@ export const mcpPlugin = (options?: {
           Effect.gen(function* () {
             if (input.error)
               return yield* Effect.fail(
-                new Error(`OAuth error: ${input.error}`),
+                mcpOAuthError(`OAuth error: ${input.error}`),
               );
             if (!input.code)
               return yield* Effect.fail(
-                new Error("Missing OAuth authorization code"),
+                mcpOAuthError("Missing OAuth authorization code"),
               );
 
             const session = oauthSessions.get(input.state);
             if (!session)
               return yield* Effect.fail(
-                new Error(
-                  `OAuth session not found: ${input.state}`,
-                ),
+                mcpOAuthError(`OAuth session not found: ${input.state}`),
               );
 
             const exchanged = yield* exchangeMcpOAuthCode({
               session,
               code: input.code,
             }).pipe(
-              Effect.mapError(
-                (e) =>
-                  new Error(`OAuth exchange failed: ${e.message}`),
+              Effect.mapError((e) =>
+                mcpOAuthError(`OAuth exchange failed: ${e.message}`),
               ),
             );
 
@@ -730,11 +740,10 @@ export const mcpPlugin = (options?: {
                 purpose: "oauth_access_token",
               })
               .pipe(
-                Effect.mapError(
-                  (e) =>
-                    new Error(
-                      `Failed to store access token: ${String(e)}`,
-                    ),
+                Effect.mapError((e) =>
+                  mcpOAuthError(
+                    `Failed to store access token: ${String(e)}`,
+                  ),
                 ),
               );
 
@@ -751,11 +760,10 @@ export const mcpPlugin = (options?: {
                   purpose: "oauth_refresh_token",
                 })
                 .pipe(
-                  Effect.mapError(
-                    (e) =>
-                      new Error(
-                        `Failed to store refresh token: ${String(e)}`,
-                      ),
+                  Effect.mapError((e) =>
+                    mcpOAuthError(
+                      `Failed to store refresh token: ${String(e)}`,
+                    ),
                   ),
                 );
               refreshTokenSecretId = ref.id;

@@ -15,7 +15,8 @@
       {
         "name": "@effect/language-service",
         "diagnostics": {
-          "preferSchemaOverJson": "off"
+          "preferSchemaOverJson": "off",
+          "globalErrorInEffectFailure": "off"
         }
       }
     ]

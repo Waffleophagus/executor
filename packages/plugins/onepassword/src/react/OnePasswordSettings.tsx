@@ -46,14 +46,19 @@ function VaultPicker(props: {
     onepasswordVaultsAtom(props.authKind, account, scopeId),
   );
 
-  const { vaults, isLoading, error } = Result.match(
+  const { vaults, isLoading, error } = Result.matchWithError(
     vaultsResult as Result.Result<{ vaults: ReadonlyArray<{ id: string; name: string }> }, Error>,
     {
       onInitial: () => ({ vaults: [] as { id: string; name: string }[], isLoading: true, error: null }),
-      onFailure: ({ error }) => ({
+      onError: (error) => ({
         vaults: [] as { id: string; name: string }[],
         isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to list vaults",
+        error: error.message,
+      }),
+      onDefect: (defect) => ({
+        vaults: [] as { id: string; name: string }[],
+        isLoading: false,
+        error: defect instanceof Error ? defect.message : "Failed to list vaults",
       }),
       onSuccess: ({ value }) => {
         const v = value.vaults;

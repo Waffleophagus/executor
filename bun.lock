@@ -387,6 +387,7 @@
         "bun-types": "catalog:",
         "react": "^19.1.0",
         "vitest": "catalog:",
+        "zod": "^4.3.6",
       },
       "peerDependencies": {
         "@effect-atom/atom-react": "^0.5.0",
@@ -420,7 +421,9 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "@types/node": "catalog:",
+        "@types/react": "^19.1.0",
         "bun-types": "catalog:",
+        "react": "^19.1.0",
         "vitest": "catalog:",
       },
       "peerDependencies": {

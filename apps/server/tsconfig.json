@@ -14,7 +14,10 @@
     "jsx": "react-jsx",
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "diagnostics": {
+          "globalErrorInEffectFailure": "off"
+        }
       }
     ]
   },

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import * as Data from "effect/Data";
 
 import type {
   Executor,
@@ -123,6 +124,12 @@ export const formatPausedExecution = (paused: PausedExecution): {
 // Full invoker (base + discover + describe)
 // ---------------------------------------------------------------------------
 
+class DescribeToolPathRequiredError extends Data.TaggedError(
+  "DescribeToolPathRequiredError",
+)<{
+  readonly message: string;
+}> {}
+
 const makeFullInvoker = (
   executor: Executor,
   invokeOptions: InvokeOptions,
@@ -136,7 +143,13 @@ const makeFullInvoker = (
       }
       if (path === "describe.tool") {
         const input = (args ?? {}) as { path?: string };
-        if (!input.path) return Effect.fail(new Error("describe.tool requires a path"));
+        if (!input.path) {
+          return Effect.fail(
+            new DescribeToolPathRequiredError({
+              message: "describe.tool requires a path",
+            }),
+          );
+        }
         return describeTool(executor, input.path);
       }
       return base.invoke({ path, args });

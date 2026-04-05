@@ -3,7 +3,7 @@ import { Schema } from "effect";
 import { ScopeId } from "@executor/sdk";
 
 import { OnePasswordError } from "../sdk/errors";
-import { OnePasswordConfig, Vault, ConnectionStatus, OnePasswordAuth } from "../sdk/types";
+import { OnePasswordConfig, Vault, ConnectionStatus } from "../sdk/types";
 
 // ---------------------------------------------------------------------------
 // Params

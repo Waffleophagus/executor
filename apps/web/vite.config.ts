@@ -38,19 +38,22 @@ const toWebRequest = async (
   const host = req.headers.host ?? "localhost";
   const url = `http://${host}${req.url}`;
 
-  return new Request(url, {
-    method: req.method,
-    headers,
-    body:
-      req.method !== "GET" && req.method !== "HEAD"
-        ? (await new Promise<Buffer>((resolve) => {
-            const chunks: Buffer[] = [];
-            req.on("data", (c: Buffer) => chunks.push(c));
-            req.on("end", () => resolve(Buffer.concat(chunks)));
-          }) as unknown as BodyInit)
-        : undefined,
-    duplex: "half" as const,
-  });
+  return new Request(
+    url,
+    {
+      method: req.method,
+      headers,
+      body:
+        req.method !== "GET" && req.method !== "HEAD"
+          ? (await new Promise<Buffer>((resolve) => {
+              const chunks: Buffer[] = [];
+              req.on("data", (c: Buffer) => chunks.push(c));
+              req.on("end", () => resolve(Buffer.concat(chunks)));
+            }) as unknown as BodyInit)
+          : undefined,
+      duplex: "half" as const,
+    } as RequestInit & { duplex: "half" },
+  );
 };
 
 // Pipe a Web Response back to a Node ServerResponse, streaming if needed

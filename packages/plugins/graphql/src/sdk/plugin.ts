@@ -17,6 +17,9 @@ import {
 
 import { introspect, parseIntrospectionJson, type IntrospectionResult, type IntrospectionType, type IntrospectionField } from "./introspect";
 import { extract } from "./extract";
+import {
+  GraphqlExtractionError,
+} from "./errors";
 import { makeGraphqlInvoker } from "./invoke";
 import type { GraphqlOperationStore } from "./operation-store";
 import { makeInMemoryOperationStore } from "./kv-operation-store";
@@ -399,10 +402,12 @@ export const graphqlPlugin = (options?: {
             addSource: (config: GraphqlSourceConfig) =>
               addSourceInternal(config).pipe(
                 Effect.map(({ toolCount }) => ({ toolCount })),
-                Effect.catchAll((err) =>
-                  Effect.fail(
-                    err instanceof Error ? err : new Error(String(err)),
-                  ),
+                Effect.mapError(
+                  (err) =>
+                    new GraphqlExtractionError({
+                      message:
+                        err instanceof Error ? err.message : String(err),
+                    }),
                 ),
               ),
 

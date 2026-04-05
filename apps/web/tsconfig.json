@@ -9,6 +9,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "jsx": "react-jsx",
+    "typeRoots": ["../../node_modules/@types"],
     "plugins": [
       {
         "name": "@effect/language-service"

@@ -320,7 +320,7 @@ describe("MCP elicitation (end-to-end)", () => {
         const gatedEcho = tools.find((t) => t.name === "gated_echo")!;
 
         // addSource created 1 session during discovery
-        const sessionsAfterAdd = server.sessionCount();
+        expect(server.sessionCount()).toBeGreaterThanOrEqual(1);
 
         // First tool call — may create a new session (discovery used a
         // different connection that was closed)

@@ -25,7 +25,9 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
+    "@types/react": "^19.1.0",
     "bun-types": "catalog:",
+    "react": "^19.1.0",
     "vitest": "catalog:"
   },
   "peerDependencies": {
