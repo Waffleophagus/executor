@@ -6,6 +6,7 @@ import {
 import { ExecutorProvider } from "@executor/react";
 import { ToolsPage } from "./pages/tools";
 import { SourcesPage } from "./pages/sources";
+import { SourcesAddPage } from "./pages/sources-add";
 import { SourceDetailPage } from "./pages/source-detail";
 import { SecretsPage } from "./pages/secrets";
 import { Shell } from "./shell";
@@ -38,6 +39,19 @@ const toolsRoute = createRoute({
   component: ToolsPage,
 });
 
+const sourcesAddRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sources/add/$pluginKey",
+  validateSearch: (search: Record<string, unknown>): { url?: string } => ({
+    url: typeof search.url === "string" ? search.url : undefined,
+  }),
+  component: () => {
+    const { pluginKey } = sourcesAddRoute.useParams();
+    const { url } = sourcesAddRoute.useSearch();
+    return <SourcesAddPage pluginKey={pluginKey} url={url} />;
+  },
+});
+
 const sourceDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sources/$namespace",
@@ -60,6 +74,7 @@ const secretsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   toolsRoute,
+  sourcesAddRoute,
   sourceDetailRoute,
   secretsRoute,
 ]);

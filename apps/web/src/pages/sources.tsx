@@ -1,6 +1,6 @@
-import { useReducer, useCallback, useMemo, Suspense } from "react";
-import { Link } from "@tanstack/react-router";
-import { Result, useAtomValue, useAtomRefresh, useAtomSet, sourcesAtom, detectSource } from "@executor/react";
+import { useState, useCallback, useMemo } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Result, useAtomValue, useAtomSet, sourcesAtom, detectSource } from "@executor/react";
 import { useScope } from "../lib/use-scope";
 import type { SourcePlugin, SourcePreset } from "@executor/react";
 import { openApiSourcePlugin } from "@executor/plugin-openapi/react";
@@ -28,122 +28,50 @@ const KIND_TO_PLUGIN_KEY: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// State machine
-// ---------------------------------------------------------------------------
-
-type State = {
-  step: "list" | "detecting" | "adding";
-  url: string;
-  error: string | null;
-  pluginKey: string | null;
-  initialUrl: string | undefined;
-};
-
-type Action =
-  | { type: "set-url"; url: string }
-  | { type: "detect-start" }
-  | { type: "detect-ok"; pluginKey: string; url: string }
-  | { type: "detect-no-match" }
-  | { type: "detect-unknown-kind"; kind: string }
-  | { type: "detect-fail" }
-  | { type: "add-manual"; pluginKey: string }
-  | { type: "add-preset"; pluginKey: string; url: string }
-  | { type: "back" };
-
-const init: State = { step: "list", url: "", error: null, pluginKey: null, initialUrl: undefined };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "set-url":
-      return { ...state, step: "list", url: action.url, error: null };
-    case "detect-start":
-      return { ...state, step: "detecting", error: null };
-    case "detect-ok":
-      return { ...state, step: "adding", pluginKey: action.pluginKey, initialUrl: action.url };
-    case "detect-no-match":
-      return { ...state, step: "list", error: "Could not detect a source type from this URL. Try adding manually." };
-    case "detect-unknown-kind":
-      return { ...state, step: "list", error: `Detected source type "${action.kind}" but no plugin is available for it.` };
-    case "detect-fail":
-      return { ...state, step: "list", error: "Detection failed. Try adding a source manually." };
-    case "add-manual":
-      return { ...state, step: "adding", pluginKey: action.pluginKey, initialUrl: undefined };
-    case "add-preset":
-      return { ...state, step: "adding", pluginKey: action.pluginKey, initialUrl: action.url };
-    case "back":
-      return init;
-    default:
-      return state;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export function SourcesPage() {
-  const [state, dispatch] = useReducer(reducer, init);
+  const [url, setUrl] = useState("");
+  const [detecting, setDetecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const scopeId = useScope();
   const sources = useAtomValue(sourcesAtom(scopeId));
-  const refreshSources = useAtomRefresh(sourcesAtom(scopeId));
   const doDetect = useAtomSet(detectSource, { mode: "promise" });
+  const navigate = useNavigate();
 
   const handleDetect = useCallback(async () => {
-    const trimmed = state.url.trim();
+    const trimmed = url.trim();
     if (!trimmed) return;
-    dispatch({ type: "detect-start" });
+    setDetecting(true);
+    setError(null);
     try {
       const results = await doDetect({
         path: { scopeId },
         payload: { url: trimmed },
       });
       if (results.length === 0) {
-        dispatch({ type: "detect-no-match" });
+        setError("Could not detect a source type from this URL. Try adding manually.");
+        setDetecting(false);
         return;
       }
       const pluginKey = KIND_TO_PLUGIN_KEY[results[0].kind];
       if (pluginKey) {
-        dispatch({ type: "detect-ok", pluginKey, url: trimmed });
+        void navigate({
+          to: "/sources/add/$pluginKey",
+          params: { pluginKey },
+          search: { url: trimmed },
+        });
       } else {
-        dispatch({ type: "detect-unknown-kind", kind: results[0].kind });
+        setError(`Detected source type "${results[0].kind}" but no plugin is available for it.`);
       }
     } catch {
-      dispatch({ type: "detect-fail" });
+      setError("Detection failed. Try adding a source manually.");
+    } finally {
+      setDetecting(false);
     }
-  }, [state.url, doDetect]);
-
-  // ---------------------------------------------------------------------------
-  // Adding view
-  // ---------------------------------------------------------------------------
-
-  if (state.step === "adding" && state.pluginKey) {
-    const plugin = sourcePlugins.find((p) => p.key === state.pluginKey);
-    if (!plugin) return null;
-    const AddComponent = plugin.add;
-    return (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-10 lg:px-10 lg:py-14">
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
-            <AddComponent
-              initialUrl={state.initialUrl}
-              onComplete={() => {
-                dispatch({ type: "back" });
-                refreshSources();
-              }}
-              onCancel={() => dispatch({ type: "back" })}
-            />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // List view
-  // ---------------------------------------------------------------------------
-
-  const isDetecting = state.step === "detecting";
-  const error = state.step === "list" ? state.error : null;
+  }, [url, doDetect, navigate, scopeId]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -166,19 +94,22 @@ export function SourcesPage() {
             <div className="flex gap-2">
               <input
                 type="url"
-                value={state.url}
-                onChange={(e) => dispatch({ type: "set-url", url: e.target.value })}
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setError(null);
+                }}
                 onKeyDown={(e) => { if (e.key === "Enter") handleDetect(); }}
                 placeholder="Paste a URL to auto-detect source type..."
-                disabled={isDetecting}
+                disabled={detecting}
                 className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               />
               <button
                 onClick={handleDetect}
-                disabled={isDetecting || !state.url.trim()}
+                disabled={detecting || !url.trim()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
               >
-                {isDetecting ? "Detecting..." : "Detect"}
+                {detecting ? "Detecting..." : "Detect"}
               </button>
             </div>
             {error && (
@@ -187,13 +118,14 @@ export function SourcesPage() {
             <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
               <span>Or add manually:</span>
               {sourcePlugins.map((p) => (
-                <button
+                <Link
                   key={p.key}
-                  onClick={() => dispatch({ type: "add-manual", pluginKey: p.key })}
+                  to="/sources/add/$pluginKey"
+                  params={{ pluginKey: p.key }}
                   className="rounded-md border border-border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted"
                 >
                   {p.label}
-                </button>
+                </Link>
               ))}
             </div>
           </div>
@@ -201,7 +133,7 @@ export function SourcesPage() {
 
         <McpInstallCard className="mb-8 rounded-2xl border border-border bg-card/80 p-5" />
 
-        <PresetGrid plugins={sourcePlugins} dispatch={dispatch} />
+        <PresetGrid plugins={sourcePlugins} />
 
         {Result.match(sources, {
           onInitial: () => (
@@ -272,7 +204,6 @@ export function SourcesPage() {
 
 function PresetGrid(props: {
   plugins: readonly SourcePlugin[];
-  dispatch: React.Dispatch<Action>;
 }) {
   const allPresets = useMemo(() => {
     const out: { preset: SourcePreset; pluginKey: string; pluginLabel: string }[] = [];
@@ -296,9 +227,11 @@ function PresetGrid(props: {
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {allPresets.map(({ preset, pluginKey, pluginLabel }) => (
-          <button
+          <Link
             key={`${pluginKey}-${preset.id}`}
-            onClick={() => props.dispatch({ type: "add-preset", pluginKey, url: preset.url })}
+            to="/sources/add/$pluginKey"
+            params={{ pluginKey }}
+            search={{ url: preset.url }}
             className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/25 hover:bg-card/90"
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground overflow-hidden">
@@ -319,7 +252,7 @@ function PresetGrid(props: {
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{preset.summary}</p>
             </div>
-          </button>
+          </Link>
         ))}
       </div>
     </section>
