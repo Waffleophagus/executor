@@ -26,6 +26,7 @@
     "@executor/ui": "1.4.0-beta.0"
   },
   "changesets": [
+    "all-squids-report",
     "green-bobcats-shop",
     "kind-cycles-hang",
     "ripe-yaks-sniff",
