@@ -466,15 +466,18 @@ export default function AddOpenApiSource(props: {
 
   const selectPreset = (index: number) => {
     setPresetIndex(index);
-    const preset = index >= 0 ? presets[index] : null;
-    const userHeaders = customHeaders.filter((h) => !h.fromPreset);
-    if (preset) {
-      setCustomHeaders([...presetEntriesFromHeaderPreset(preset), ...userHeaders]);
-    } else if (index === -2 && userHeaders.length === 0) {
-      // "Custom" selected with no existing user headers — seed one empty row
-      setCustomHeaders([{ name: "", secretId: null, presetKey: undefined }]);
+    if (index === -1) {
+      // "None" — clear everything
+      setCustomHeaders([]);
+    } else if (index === -2) {
+      // "Custom" — keep user headers, drop preset-derived, seed if empty
+      const userHeaders = customHeaders.filter((h) => !h.fromPreset);
+      setCustomHeaders(userHeaders.length > 0 ? userHeaders : [{ name: "", secretId: null, presetKey: undefined }]);
     } else {
-      setCustomHeaders(userHeaders);
+      // Preset strategy — replace preset-derived headers, keep user headers
+      const preset = presets[index];
+      const userHeaders = customHeaders.filter((h) => !h.fromPreset);
+      setCustomHeaders(preset ? [...presetEntriesFromHeaderPreset(preset), ...userHeaders] : userHeaders);
     }
   };
 
