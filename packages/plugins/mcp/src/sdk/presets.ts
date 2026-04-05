@@ -42,4 +42,11 @@ export const mcpPresets: readonly McpPreset[] = [
     url: "https://mcp.neon.tech/mcp",
     icon: "https://neon.tech/favicon/favicon.ico",
   },
+  {
+    id: "axiom",
+    name: "Axiom",
+    summary: "Query, analyze, and monitor your logs and event data.",
+    url: "https://mcp.axiom.co/mcp",
+    icon: "https://axiom.co/favicon.ico",
+  },
 ];
