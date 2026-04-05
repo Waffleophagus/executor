@@ -241,6 +241,39 @@ const buildWrapperPackage = async (binaries: Record<string, string>) => {
 // Publish
 // ---------------------------------------------------------------------------
 
+const packageAlreadyPublished = async (pkgDir: string) => {
+  const pkg = await Bun.file(join(pkgDir, "package.json")).json() as {
+    name?: string;
+    version?: string;
+  };
+
+  if (!pkg.name || !pkg.version) {
+    throw new Error(`Missing name/version in ${join(pkgDir, "package.json")}`);
+  }
+
+  const proc = Bun.spawn(["npm", "view", `${pkg.name}@${pkg.version}`, "version"], {
+    cwd: pkgDir,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+
+  return (await proc.exited) === 0;
+};
+
+const publishPackedPackage = async (pkgDir: string, channel: string) => {
+  if (await packageAlreadyPublished(pkgDir)) {
+    console.log(`Skipping ${pkgDir}; package version already exists on npm.`);
+    return;
+  }
+
+  await $`bun pm pack`.cwd(pkgDir);
+
+  if (process.env.GITHUB_ACTIONS === "true") {
+    await $`npm publish *.tgz --access public --tag ${channel} --provenance`.cwd(pkgDir);
+  } else {
+    await $`npm publish *.tgz --access public --tag ${channel}`.cwd(pkgDir);
+  }
+};
+
 const publish = async (channel: string) => {
   const meta = await readMetadata();
 
@@ -248,20 +281,27 @@ const publish = async (channel: string) => {
   for (const entry of new Bun.Glob("executor-*/package.json").scanSync({ cwd: distDir })) {
     const pkgDir = join(distDir, dirname(entry));
     console.log(`Publishing ${pkgDir}...`);
-    await $`bun pm pack`.cwd(pkgDir);
-    await $`npm publish *.tgz --access public --tag ${channel}`.cwd(pkgDir);
+    await publishPackedPackage(pkgDir, channel);
   }
 
   // Publish wrapper package
   const wrapperDir = join(distDir, meta.name);
   console.log(`Publishing ${wrapperDir}...`);
-  await $`bun pm pack`.cwd(wrapperDir);
-  await $`npm publish *.tgz --access public --tag ${channel}`.cwd(wrapperDir);
+  await publishPackedPackage(wrapperDir, channel);
 };
 
 // ---------------------------------------------------------------------------
 // GitHub release assets
 // ---------------------------------------------------------------------------
+
+const ZIP_ASSET_SCRIPT = [
+  "import pathlib, sys, zipfile",
+  "output = pathlib.Path(sys.argv[1])",
+  "with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:",
+  "    for path in pathlib.Path('.').rglob('*'):",
+  "        if path.is_file():",
+  "            archive.write(path, path.as_posix())",
+].join("\n");
 
 const createReleaseAssets = async () => {
   for (const entry of new Bun.Glob("executor-*/package.json").scanSync({ cwd: distDir })) {
@@ -272,7 +312,7 @@ const createReleaseAssets = async () => {
     if (name.includes("linux")) {
       await $`tar -czf ${join(distDir, `${name}.tar.gz`)} *`.cwd(join(pkgDir, "bin"));
     } else {
-      await $`zip -r ${join(distDir, `${name}.zip`)} *`.cwd(join(pkgDir, "bin"));
+      await $`python3 -c ${ZIP_ASSET_SCRIPT} ${join(distDir, `${name}.zip`)}`.cwd(join(pkgDir, "bin"));
     }
 
     console.log(`Created release asset: ${name}`);

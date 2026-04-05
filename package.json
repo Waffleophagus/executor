@@ -1,5 +1,5 @@
 {
-  "name": "executor",
+  "name": "executor-workspace",
   "version": "1.4.0-beta.0",
   "description": "Local AI executor with a CLI, local API server, and web UI.",
   "keywords": [
@@ -50,9 +50,19 @@
     "typecheck": "bun run --filter='*' typecheck",
     "lint": "oxlint -c .oxlintrc.jsonc . --deny-warnings",
     "lint:fix": "oxlint -c .oxlintrc.jsonc --fix .",
+    "changeset": "changeset",
+    "changeset:version": "changeset version && node ./scripts/release/sync-versions.mjs && bun install --lockfile-only",
+    "release:check": "bun run --cwd apps/cli typecheck && bun run release:publish:dry-run",
+    "release:pre:enter": "changeset pre enter beta",
+    "release:pre:exit": "changeset pre exit",
+    "release:beta:start": "changeset pre enter beta",
+    "release:beta:stop": "changeset pre exit",
+    "release:publish:dry-run": "bun run --cwd apps/cli release:publish:dry-run",
+    "release:publish": "bun run --cwd apps/cli release:publish",
     "prepare": "effect-language-service patch"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@effect/language-service": "^0.84.2",
     "@effect/platform": "catalog:",
     "@effect/vitest": "catalog:",
