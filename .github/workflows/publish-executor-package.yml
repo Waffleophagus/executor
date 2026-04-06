@@ -13,6 +13,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
   id-token: write
 
@@ -64,3 +65,9 @@ jobs:
           export GITHUB_REF_NAME="$RELEASE_TAG"
           export GITHUB_REF="refs/tags/$RELEASE_TAG"
           bun run release:publish
+
+      - name: Trigger desktop build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: gh workflow run publish-desktop.yml -f tag="$RELEASE_TAG"

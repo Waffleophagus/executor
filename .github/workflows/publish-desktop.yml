@@ -2,13 +2,10 @@ name: Publish Desktop App
 run-name: "${{ format('publish desktop {0}', github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name) }}"
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Git tag to publish
+        description: Git tag to publish (e.g. v1.4.1)
         required: true
         type: string
 
@@ -28,15 +25,19 @@ jobs:
           - os: macos-latest
             arch: arm64
             platform: mac
+            cli-asset: executor-darwin-arm64.zip
           - os: macos-latest
             arch: x64
             platform: mac
+            cli-asset: executor-darwin-x64.zip
           - os: ubuntu-latest
             arch: x64
             platform: linux
+            cli-asset: executor-linux-x64.tar.gz
           - os: windows-latest
             arch: x64
             platform: win
+            cli-asset: executor-windows-x64.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -44,7 +45,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -63,54 +64,60 @@ jobs:
         run: bun run build
         working-directory: apps/web
 
-      - name: Build CLI sidecar binary
-        run: bun run src/build.ts binary --single
-        working-directory: apps/cli
-
-      - name: Copy sidecar to desktop resources
-        shell: bash
+      - name: Download CLI binary from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p apps/desktop/resources
-          if [ "${{ matrix.platform }}" = "win" ]; then
-            BINARY_NAME="executor.exe"
+          gh release download "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ matrix.cli-asset }}" \
+            --dir /tmp/cli-download
+
+      - name: Extract CLI sidecar (unix)
+        if: matrix.platform != 'win'
+        run: |
+          cd /tmp/cli-download
+          if [[ "${{ matrix.cli-asset }}" == *.tar.gz ]]; then
+            tar -xzf "${{ matrix.cli-asset }}"
           else
-            BINARY_NAME="executor"
+            unzip -o "${{ matrix.cli-asset }}"
           fi
-
-          PLATFORM="${{ matrix.platform == 'mac' && 'darwin' || matrix.platform == 'win' && 'windows' || 'linux' }}"
-          ARCH="${{ matrix.arch }}"
-          SRC="apps/cli/dist/executor-${PLATFORM}-${ARCH}/bin"
-
-          cp "${SRC}/${BINARY_NAME}" "apps/desktop/resources/${BINARY_NAME}"
-          chmod +x "apps/desktop/resources/${BINARY_NAME}" 2>/dev/null || true
-
-          if [ -f "${SRC}/emscripten-module.wasm" ]; then
-            cp "${SRC}/emscripten-module.wasm" "apps/desktop/resources/"
+          cp executor apps/desktop/resources/executor
+          chmod +x apps/desktop/resources/executor
+          if [ -f emscripten-module.wasm ]; then
+            cp emscripten-module.wasm apps/desktop/resources/
           fi
+        working-directory: ${{ github.workspace }}
+
+      - name: Extract CLI sidecar (windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "/tmp/cli-download/${{ matrix.cli-asset }}" -DestinationPath "/tmp/cli-extract" -Force
+          Copy-Item "/tmp/cli-extract/executor.exe" "apps/desktop/resources/executor.exe"
+          if (Test-Path "/tmp/cli-extract/emscripten-module.wasm") {
+            Copy-Item "/tmp/cli-extract/emscripten-module.wasm" "apps/desktop/resources/"
+          }
 
       - name: Build desktop app (TypeScript)
         run: bunx tsc -p tsconfig.json
         working-directory: apps/desktop
 
       - name: Build desktop distributables
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --dir
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --dir
         working-directory: apps/desktop
 
-      - name: Package artifacts (macOS)
+      - name: Package (macOS)
         if: matrix.platform == 'mac'
         working-directory: apps/desktop/dist
         run: |
-          # Find the .app and zip it
           APP_DIR=$(find . -name "*.app" -maxdepth 2 | head -1)
           if [ -n "$APP_DIR" ]; then
-            ZIP_NAME="Executor-${{ matrix.arch }}-mac.zip"
-            ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_NAME"
+            ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "Executor-${{ matrix.arch }}-mac.zip"
           fi
 
-      - name: Package artifacts (Linux)
+      - name: Package (Linux)
         if: matrix.platform == 'linux'
         working-directory: apps/desktop/dist
         run: |
@@ -119,7 +126,7 @@ jobs:
             tar -czf "Executor-x64-linux.tar.gz" -C "$UNPACKED" .
           fi
 
-      - name: Package artifacts (Windows)
+      - name: Package (Windows)
         if: matrix.platform == 'win'
         working-directory: apps/desktop/dist
         shell: pwsh
@@ -134,8 +141,8 @@ jobs:
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            apps/desktop/dist/*.zip
-            apps/desktop/dist/*.tar.gz
+            apps/desktop/dist/Executor-*.zip
+            apps/desktop/dist/Executor-*.tar.gz
           if-no-files-found: warn
 
   release:
@@ -149,26 +156,11 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: List artifacts
-        run: find artifacts -type f | head -20
-
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          # Wait for the CLI release to create the GitHub release first
-          for i in $(seq 1 30); do
-            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "Release $TAG found"
-              break
-            fi
-            echo "Waiting for release $TAG to be created... ($i/30)"
-            sleep 10
-          done
-
-          # Upload desktop artifacts
           find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) | while read file; do
             echo "Uploading: $file"
-            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber || true
+            gh release upload "${{ inputs.tag }}" "$file" --repo "${{ github.repository }}" --clobber || true
           done

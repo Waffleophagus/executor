@@ -10,7 +10,10 @@ import {
 } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { join, resolve, basename } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  existsSync, readFileSync, writeFileSync, mkdirSync,
+  copyFileSync, chmodSync, appendFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,59 @@ const DEFAULT_PORT = 14788;
 const SERVER_STARTUP_TIMEOUT_MS = 30_000;
 const SETTINGS_DIR = join(homedir(), ".executor");
 const SETTINGS_PATH = join(SETTINGS_DIR, "desktop-settings.json");
+
+const CLI_BIN_DIR = join(SETTINGS_DIR, "bin");
+const CLI_BIN_PATH = join(CLI_BIN_DIR, process.platform === "win32" ? "executor.exe" : "executor");
+
+// ---------------------------------------------------------------------------
+// CLI install — copy sidecar to ~/.executor/bin and patch shell PATH
+// ---------------------------------------------------------------------------
+
+const installCli = (): void => {
+  if (isDev) return;
+
+  const sidecar = join(process.resourcesPath, binaryName);
+  if (!existsSync(sidecar)) return;
+
+  // Copy binary
+  mkdirSync(CLI_BIN_DIR, { recursive: true });
+  copyFileSync(sidecar, CLI_BIN_PATH);
+  try { chmodSync(CLI_BIN_PATH, 0o755); } catch {}
+
+  // Copy WASM if present
+  const wasm = join(process.resourcesPath, "emscripten-module.wasm");
+  if (existsSync(wasm)) {
+    copyFileSync(wasm, join(CLI_BIN_DIR, "emscripten-module.wasm"));
+  }
+
+  // Patch shell profiles with PATH
+  if (process.platform === "win32") return;
+
+  const pathLine = `export PATH="${CLI_BIN_DIR}:$PATH"`;
+  const profiles = [
+    join(homedir(), ".zshrc"),
+    join(homedir(), ".bashrc"),
+    join(homedir(), ".bash_profile"),
+  ];
+
+  // Fish uses a different syntax
+  const fishConfig = join(homedir(), ".config", "fish", "config.fish");
+  const fishLine = `fish_add_path "${CLI_BIN_DIR}"`;
+
+  for (const profile of profiles) {
+    if (!existsSync(profile)) continue;
+    const content = readFileSync(profile, "utf-8");
+    if (content.includes(CLI_BIN_DIR)) continue;
+    appendFileSync(profile, `\n# Added by Executor desktop app\n${pathLine}\n`);
+  }
+
+  if (existsSync(fishConfig)) {
+    const content = readFileSync(fishConfig, "utf-8");
+    if (!content.includes(CLI_BIN_DIR)) {
+      appendFileSync(fishConfig, `\n# Added by Executor desktop app\n${fishLine}\n`);
+    }
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -629,6 +685,9 @@ const welcomeHTML = (): string => {
 app.whenReady().then(async () => {
   // Clear cached web content so we always load the latest UI
   await session.defaultSession.clearCache();
+
+  // Install/update CLI binary to ~/.executor/bin
+  installCli();
 
   settings = loadSettings();
   setupIPC();

@@ -88,11 +88,14 @@ jobs:
           git tag "$tag"
           git push origin "$tag"
 
-      - name: Trigger publish workflows
+      - name: Trigger CLI publish
         if: steps.changesets.outputs.hasChangesets == 'false' && steps.detect_release.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="v${{ steps.detect_release.outputs.version }}"
           gh workflow run publish-executor-package.yml --ref "$tag" -f tag="$tag"
-          gh workflow run publish-desktop.yml --ref "$tag" -f tag="$tag"
+
+      # Desktop build downloads CLI binaries from the release, so it must
+      # run after CLI publish completes. Trigger it from the CLI workflow
+      # or manually via: gh workflow run publish-desktop.yml -f tag=vX.Y.Z
