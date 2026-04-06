@@ -104,6 +104,9 @@ export default defineConfig({
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(EXECUTOR_VERSION),
     "import.meta.env.VITE_GITHUB_URL": JSON.stringify(EXECUTOR_GITHUB_URL),
   },
+  resolve: {
+    dedupe: ["react", "react-dom"],
+  },
   plugins: [
     react(),
     tailwindcss(),
