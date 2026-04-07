@@ -1,0 +1,31 @@
+{
+  "name": "@executor/storage-postgres",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@effect/sql": "catalog:",
+    "@effect/sql-pg": "^0.28.0",
+    "@executor/sdk": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "effect": "catalog:",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@electric-sql/pglite": "^0.4.3",
+    "@types/pg": "^8.15.4",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  }
+}
