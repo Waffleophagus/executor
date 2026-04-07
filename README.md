@@ -100,7 +100,6 @@ executor call --file script.ts      # execute a file
 executor call '<code>'              # execute inline code
 executor call --stdin               # execute from stdin
 executor resume --execution-id <id> # resume paused execution
-executor up / down / status         # daemon lifecycle
 ```
 
 ## Developing locally
