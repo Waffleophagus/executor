@@ -13,7 +13,7 @@ npm install -g executor
 executor web
 ```
 
-This starts a local runtime with a web UI at `http://127.0.0.1:8788`. From there, add your first source and start using tools.
+This starts a local runtime with a web UI at `http://127.0.0.1:4788`. From there, add your first source and start using tools.
 
 ### Use as an MCP server
 
@@ -43,7 +43,7 @@ If you can represent it with a JSON schema, it can be an integration. Executor h
 
 ### Via the web UI
 
-Open `http://127.0.0.1:8788`, go to **Add Source**, paste a URL, and Executor will detect the type, index the tools, and handle auth.
+Open `http://127.0.0.1:4788`, go to **Add Source**, paste a URL, and Executor will detect the type, index the tools, and handle auth.
 
 ### Via the CLI
 
@@ -110,7 +110,7 @@ bun install
 bun dev
 ```
 
-The dev server starts at `http://127.0.0.1:8788`.
+The dev server starts at `http://127.0.0.1:4788`.
 
 ## Community
 
